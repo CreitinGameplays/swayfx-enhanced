@@ -602,17 +602,35 @@ static void arrange_container(struct sway_container *con,
 		wlr_scene_blur_set_size(con->blur, content_width, content_height);
 
 		wlr_scene_node_set_enabled(&con->liquid_glass->node, container_has_liquid_glass(con));
-		wlr_scene_node_set_position(&con->liquid_glass->node, border_left, border_top);
-		wlr_scene_liquid_glass_set_size(con->liquid_glass, content_width, content_height);
-		wlr_scene_liquid_glass_set_data(con->liquid_glass, config->liquid_glass_data);
+		
+		int glass_y = border_top;
+		int glass_height = content_height;
+		int clip_y = 0;
+		int clip_height = content_height;
+		if (con->current.border == B_NORMAL && border_top > 0) {
+			glass_y = 0;
+			glass_height += border_top;
+			clip_y = border_top;
+		} else if (con->current.border == B_NORMAL && border_top == 0) {
+			glass_y = -1;
+			glass_height += 1;
+			clip_height += 1;
+		}
+
+		wlr_scene_node_set_position(&con->liquid_glass->node, border_left, glass_y);
+		wlr_scene_liquid_glass_set_size(con->liquid_glass, content_width, glass_height);
+		
+		struct liquid_glass_data glass_data = config->liquid_glass_data;
 		struct clipped_region liquid_glass_clip = {
-			.area = { .width = content_width, .height = content_height },
+			.area = { .x = 0, .y = clip_y, .width = content_width, .height = clip_height },
 			.corners = (con->current.border == B_NORMAL) ?
 				corner_radii_bottom(con->corner_radius) : corner_radii_all(con->corner_radius),
 		};
 		if (!container_has_corner_radius(con)) {
 			liquid_glass_clip.corners = corner_radii_none();
+			glass_data.specular_opacity = 0.0f;
 		}
+		wlr_scene_liquid_glass_set_data(con->liquid_glass, glass_data);
 		wlr_scene_liquid_glass_set_clipped_region(con->liquid_glass, liquid_glass_clip);
 	} else {
 		// make sure to disable the title bar if the parent is not managing it

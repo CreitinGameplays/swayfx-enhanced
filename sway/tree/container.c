@@ -2041,6 +2041,10 @@ bool container_has_liquid_glass(struct sway_container *con) {
 		return false;
 	}
 
+	if (con->current.parent && con->current.parent->current.layout == L_TABBED) {
+		return false;
+	}
+
 	bool transparent = false;
 	if (con->alpha < 1.0f) {
 		transparent = true;
@@ -2065,18 +2069,11 @@ bool container_has_liquid_glass(struct sway_container *con) {
 		}
 	}
 
-	if (container_is_fullscreen_or_child(con)) {
+	if (!transparent) {
 		return false;
 	}
 
-	if (!container_is_floating_or_child(con) &&
-			con->current.workspace &&
-			con->current.workspace->current_gaps.top == 0 &&
-			config->smart_corner_radius) {
-		return false;
-	}
-
-	return transparent;
+	return true;
 }
 
 
