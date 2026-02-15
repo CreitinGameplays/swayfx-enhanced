@@ -2,6 +2,8 @@
     <img src="assets/swayfx_logo.svg" width="256" alt="swayfx logo">
 </p>
 
+### Note: this is a fork of the original [swayfx](https://github.com/WillPower3309/swayfx) repository.
+
 Sway is an incredible window manager, and certainly one of the most well established Wayland window managers. However, it is restricted to only include the functionality that existed in i3. This fork ditches the simple `wlr_renderer`, and replaces it with our `fx_renderer` (via [scenefx](https://github.com/wlrfx/scenefx)), capable of rendering with fancy GLES2 effects.
 
 SwayFX expands Sway's feature set to include eye-candy that many users have been asking for:
@@ -17,7 +19,6 @@ SwayFX expands Sway's feature set to include eye-candy that many users have been
 + **Nixified**: First-class support for Nix and NixOS.
 
 <p align="center">
-    <a href="https://repology.org/project/swayfx/versions"><img src="https://repology.org/badge/vertical-allrepos/swayfx.svg" height="282"/></a>
     <img src="assets/swayfx_screenshot.jpg" width="500"/>
 </p>
 
