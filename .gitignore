@@ -16,3 +16,5 @@ result
 
 # ignore the build output from build.sh
 opt/
+
+scan_comments.py

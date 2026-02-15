@@ -98,9 +98,7 @@ A refractive glass effect that distorts the background.
 
 ## Roadmap
 
-+ [ ] Improved fade in / out animations for window closing.
-+ [ ] Border color gradients.
-+ [ ] Improved Liquid Glass stability and performance.
++ [x] Improved Liquid Glass stability and performance.
 
 ## Compiling From Source
 
