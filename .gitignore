@@ -1,0 +1,18 @@
+install_manifest.txt
+*.swp
+*.o
+*.a
+bin/
+test/
+build/
+build-*/
+.cache/
+.lvimrc
+config-debug
+wayland-*-protocol.*
+/subprojects/wlroots
+subprojects
+result
+
+# ignore the build output from build.sh
+opt/
