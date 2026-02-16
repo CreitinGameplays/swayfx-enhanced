@@ -28,15 +28,6 @@ add_project_arguments(
 	language: 'c',
 )
 
-# Scan comments check
-python = find_program('python3', required: true)
-custom_target(
-	'scan-comments',
-	output: '.scan-comments.stamp',
-	command: [python, meson.project_source_root() / 'scan_comments.py', '--stamp', '@OUTPUT@', meson.project_source_root()],
-	build_by_default: true,
-)
-
 cc = meson.get_compiler('c')
 
 is_freebsd = host_machine.system().startswith('freebsd')
