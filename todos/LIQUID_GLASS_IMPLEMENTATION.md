@@ -66,3 +66,4 @@ for_window [app_id="firefox"] liquid_glass enable
 
 This requires adding a new command `glass` and updating the rendering pipeline to apply the "Liquid Glass" shader to windows when enabled.
 
+Liquid Glass should be automatically turned off in **tabbed mode window** only. Freeform and Stacked mode should be fine.

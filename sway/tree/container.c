@@ -2041,10 +2041,6 @@ bool container_has_liquid_glass(struct sway_container *con) {
 		return false;
 	}
 
-	if (con->current.parent && con->current.parent->current.layout == L_TABBED) {
-		return false;
-	}
-
 	bool transparent = false;
 	if (con->alpha < 1.0f) {
 		transparent = true;

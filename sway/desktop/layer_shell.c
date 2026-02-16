@@ -125,17 +125,22 @@ static void arrange_surface(struct sway_output *output, const struct wlr_box *fu
 		}
 
 		wlr_scene_node_set_enabled(&surface->liquid_glass_node->node, liquid_glass_enabled);
-		wlr_scene_liquid_glass_set_size(surface->liquid_glass_node,
-			surface->layer_surface->surface->current.width,
-			surface->layer_surface->surface->current.height);
-		wlr_scene_liquid_glass_set_data(surface->liquid_glass_node, config->liquid_glass_data);
-		wlr_scene_liquid_glass_set_clipped_region(surface->liquid_glass_node, (struct clipped_region) {
-			.area = {
-				.width = surface->layer_surface->surface->current.width,
-				.height = surface->layer_surface->surface->current.height,
-			},
-			.corners = corner_radii_all(surface->corner_radius),
-		});
+		int glass_width = surface->layer_surface->surface->current.width;
+		int glass_height = surface->layer_surface->surface->current.height;
+
+		if (glass_width <= 0 || glass_height <= 0) {
+			wlr_scene_node_set_enabled(&surface->liquid_glass_node->node, false);
+		} else {
+			wlr_scene_liquid_glass_set_size(surface->liquid_glass_node, glass_width, glass_height);
+			wlr_scene_liquid_glass_set_data(surface->liquid_glass_node, config->liquid_glass_data);
+			wlr_scene_liquid_glass_set_clipped_region(surface->liquid_glass_node, (struct clipped_region) {
+				.area = {
+					.width = glass_width,
+					.height = glass_height,
+				},
+				.corners = corner_radii_all(surface->corner_radius),
+			});
+		}
 
 		wlr_scene_node_set_enabled(&surface->shadow_node->node, surface->shadow_enabled);
 
