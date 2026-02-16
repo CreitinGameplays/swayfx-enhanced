@@ -113,6 +113,19 @@ struct cmd_results *cmd_liquid_glass_refraction_index(int argc, char **argv) {
 	return cmd_results_new(CMD_SUCCESS, NULL);
 }
 
+struct cmd_results *cmd_liquid_glass_specular(int argc, char **argv) {
+	struct cmd_results *error = checkarg(argc, "liquid_glass_specular", EXPECTED_EQUAL_TO, 1);
+	if (error) {
+		return error;
+	}
+
+	config->liquid_glass_data.specular_enabled = parse_boolean(argv[0], true);
+
+	arrange_root();
+
+	return cmd_results_new(CMD_SUCCESS, NULL);
+}
+
 struct cmd_results *cmd_liquid_glass_specular_opacity(int argc, char **argv) {
 	struct cmd_results *error = checkarg(argc, "liquid_glass_specular_opacity", EXPECTED_EQUAL_TO, 1);
 	if (error) {

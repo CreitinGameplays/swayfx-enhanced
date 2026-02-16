@@ -88,6 +88,7 @@ A refractive glass effect that distorts the background.
 - `liquid_glass_noise_intensity <float>`
 - `liquid_glass_refraction_index <float>`
 - `liquid_glass_saturation_boost <float>`
+- `liquid_glass_specular <on/off>`
 - `liquid_glass_specular_opacity <float>`
 - `liquid_glass_specular_angle <float>`
 - `liquid_glass_surface <convex_circle|convex_squircle|concave|lip>`

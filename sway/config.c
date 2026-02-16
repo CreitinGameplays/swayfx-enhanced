@@ -369,6 +369,7 @@ static void config_defaults(struct sway_config *config) {
 	config->liquid_glass_data.bezel_width = 20.0f;
 	config->liquid_glass_data.thickness = 1.0f;
 	config->liquid_glass_data.refraction_index = 1.5f;
+	config->liquid_glass_data.specular_enabled = true;
 	config->liquid_glass_data.specular_opacity = 0.4f;
 	config->liquid_glass_data.specular_angle = -60.0f;
 	config->liquid_glass_data.brightness_boost = 1.05f;

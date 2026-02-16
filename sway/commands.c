@@ -96,6 +96,7 @@ static const struct cmd_handler handlers[] = {
 	{ "liquid_glass_noise_intensity", cmd_liquid_glass_noise_intensity },
 	{ "liquid_glass_refraction_index", cmd_liquid_glass_refraction_index },
 	{ "liquid_glass_saturation_boost", cmd_liquid_glass_saturation_boost },
+	{ "liquid_glass_specular", cmd_liquid_glass_specular },
 	{ "liquid_glass_specular_angle", cmd_liquid_glass_specular_angle },
 	{ "liquid_glass_specular_opacity", cmd_liquid_glass_specular_opacity },
 	{ "liquid_glass_surface", cmd_liquid_glass_surface },

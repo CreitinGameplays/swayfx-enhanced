@@ -177,6 +177,7 @@ sway_cmd cmd_liquid_glass_chromatic_aberration;
 sway_cmd cmd_liquid_glass_noise_intensity;
 sway_cmd cmd_liquid_glass_refraction_index;
 sway_cmd cmd_liquid_glass_saturation_boost;
+sway_cmd cmd_liquid_glass_specular;
 sway_cmd cmd_liquid_glass_specular_opacity;
 sway_cmd cmd_liquid_glass_specular_angle;
 sway_cmd cmd_liquid_glass_surface;
