@@ -143,3 +143,6 @@ SwayFX is a community project built on the shoulders of giants. We thank:
 - **pkdesuwu** and **honchokomodo** for the SwayFX mascot.
 - **spooky_skeleton** for the SwayFX logo, and **Basil** for refinements.
 - Our amazing community for testing and supporting the project.
+
+### todo
+- [ ] steal Niriwm features
