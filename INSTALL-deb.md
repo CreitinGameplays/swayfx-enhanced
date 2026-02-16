@@ -1,6 +1,6 @@
-# A guide to installing SwayFX on Debian 13 (Trixie/Sid)
+# A guide to installing SwayFX Enhanced on Debian 13 (Trixie/Sid)
 
-> **Note:** This guide targets **SwayFX 0.5.3** (based on Sway 1.11). It manually builds the required dependencies (**wlroots 0.19.0** and **scenefx 0.4.1**) using Meson subprojects to ensure compatibility and stability.
+> **Note:** This guide targets **SwayFX Enhanced** (based on Sway 1.11). It manually builds the required dependencies (**wlroots 0.19.0** and **scenefx-enhanced**) using Meson subprojects to ensure compatibility and stability.
 
 ## 1\. Install Dependencies
 
@@ -26,21 +26,16 @@ We will use the **Meson Subprojects** method. This places the specific versions 
 mkdir -p ~/build
 cd ~/build
 
-# 1. Clone SwayFX 0.5.3 (The Window Manager)
-git clone https://github.com/WillPower3309/swayfx.git
-cd swayfx
-git checkout 0.5.3
+# 1. Clone SwayFX Enhanced
+git clone https://github.com/CreitinGameplays/swayfx-enhanced.git
+cd swayfx-enhanced
 
 # 2. Setup Subprojects Directory
-mkdir subprojects
+mkdir -p subprojects
 cd subprojects
 
-# 3. Clone SceneFX 0.4.1 (The Rendering FX Library)
-# Note: 0.4.1 is required for wlroots 0.19 support
-git clone https://github.com/wlrfx/scenefx.git
-cd scenefx
-git checkout 0.4.1
-cd ..
+# 3. Clone SceneFX Enhanced
+git clone https://github.com/CreitinGameplays/scenefx-enhanced.git scenefx
 
 # 4. Clone Wlroots 0.19.0 (The Wayland Compositor Backend)
 git clone https://gitlab.freedesktop.org/wlroots/wlroots.git
@@ -54,9 +49,9 @@ cd ../..
 Your directory structure should now look like this:
 
 ```text
-~/build/swayfx
+~/build/swayfx-enhanced
 └── subprojects
-    ├── scenefx (v0.4.1)
+    ├── scenefx (enhanced)
     └── wlroots (v0.19.0)
 ```
 
