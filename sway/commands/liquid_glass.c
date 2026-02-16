@@ -64,8 +64,8 @@ struct cmd_results *cmd_liquid_glass_bezel_width(int argc, char **argv) {
 
 	char *inv;
 	float value = strtof(argv[0], &inv);
-	if (*inv != '\0' || value < 0) {
-		return cmd_results_new(CMD_INVALID, "Invalid bezel width");
+	if (*inv != '\0' || value < 0 || value > 500.0) {
+		return cmd_results_new(CMD_INVALID, "Invalid bezel width (must be between 0 and 500)");
 	}
 
 	config->liquid_glass_data.bezel_width = value;
@@ -83,8 +83,8 @@ struct cmd_results *cmd_liquid_glass_thickness(int argc, char **argv) {
 
 	char *inv;
 	float value = strtof(argv[0], &inv);
-	if (*inv != '\0' || value < 0) {
-		return cmd_results_new(CMD_INVALID, "Invalid thickness");
+	if (*inv != '\0' || value < 0 || value > 20.0) {
+		return cmd_results_new(CMD_INVALID, "Invalid thickness (must be between 0 and 20)");
 	}
 
 	config->liquid_glass_data.thickness = value;
@@ -102,8 +102,8 @@ struct cmd_results *cmd_liquid_glass_refraction_index(int argc, char **argv) {
 
 	char *inv;
 	float value = strtof(argv[0], &inv);
-	if (*inv != '\0' || value < 1.0) {
-		return cmd_results_new(CMD_INVALID, "Invalid refraction index (must be >= 1.0)");
+	if (*inv != '\0' || value < 1.0 || value > 5.0) {
+		return cmd_results_new(CMD_INVALID, "Invalid refraction index (must be between 1.0 and 5.0)");
 	}
 
 	config->liquid_glass_data.refraction_index = value;
@@ -126,6 +126,101 @@ struct cmd_results *cmd_liquid_glass_specular_opacity(int argc, char **argv) {
 	}
 
 	config->liquid_glass_data.specular_opacity = value;
+
+	arrange_root();
+
+	return cmd_results_new(CMD_SUCCESS, NULL);
+}
+
+struct cmd_results *cmd_liquid_glass_specular_angle(int argc, char **argv) {
+	struct cmd_results *error = checkarg(argc, "liquid_glass_specular_angle", EXPECTED_EQUAL_TO, 1);
+	if (error) {
+		return error;
+	}
+
+	char *inv;
+	float value = strtof(argv[0], &inv);
+	if (*inv != '\0') {
+		return cmd_results_new(CMD_INVALID, "Invalid specular angle");
+	}
+
+	config->liquid_glass_data.specular_angle = value;
+
+	arrange_root();
+
+	return cmd_results_new(CMD_SUCCESS, NULL);
+}
+
+struct cmd_results *cmd_liquid_glass_brightness_boost(int argc, char **argv) {
+	struct cmd_results *error = checkarg(argc, "liquid_glass_brightness_boost", EXPECTED_EQUAL_TO, 1);
+	if (error) {
+		return error;
+	}
+
+	char *inv;
+	float value = strtof(argv[0], &inv);
+	if (*inv != '\0' || value < 0 || value > 10.0) {
+		return cmd_results_new(CMD_INVALID, "Invalid brightness boost (must be between 0 and 10)");
+	}
+
+	config->liquid_glass_data.brightness_boost = value;
+
+	arrange_root();
+
+	return cmd_results_new(CMD_SUCCESS, NULL);
+}
+
+struct cmd_results *cmd_liquid_glass_saturation_boost(int argc, char **argv) {
+	struct cmd_results *error = checkarg(argc, "liquid_glass_saturation_boost", EXPECTED_EQUAL_TO, 1);
+	if (error) {
+		return error;
+	}
+
+	char *inv;
+	float value = strtof(argv[0], &inv);
+	if (*inv != '\0' || value < 0 || value > 10.0) {
+		return cmd_results_new(CMD_INVALID, "Invalid saturation boost (must be between 0 and 10)");
+	}
+
+	config->liquid_glass_data.saturation_boost = value;
+
+	arrange_root();
+
+	return cmd_results_new(CMD_SUCCESS, NULL);
+}
+
+struct cmd_results *cmd_liquid_glass_noise_intensity(int argc, char **argv) {
+	struct cmd_results *error = checkarg(argc, "liquid_glass_noise_intensity", EXPECTED_EQUAL_TO, 1);
+	if (error) {
+		return error;
+	}
+
+	char *inv;
+	float value = strtof(argv[0], &inv);
+	if (*inv != '\0' || value < 0 || value > 1.0) {
+		return cmd_results_new(CMD_INVALID, "Invalid noise intensity (must be between 0 and 1)");
+	}
+
+	config->liquid_glass_data.noise_intensity = value;
+
+	arrange_root();
+
+	return cmd_results_new(CMD_SUCCESS, NULL);
+}
+
+struct cmd_results *cmd_liquid_glass_chromatic_aberration(int argc, char **argv) {
+	struct cmd_results *error = checkarg(argc, "liquid_glass_chromatic_aberration", EXPECTED_EQUAL_TO, 1);
+	if (error) {
+		return error;
+	}
+
+	char *inv;
+	float value = strtof(argv[0], &inv);
+	if (*inv != '\0' || value < 0 || value > 100.0) {
+		return cmd_results_new(CMD_INVALID, "Invalid chromatic aberration (must be between 0 and 100)");
+	}
+
+	config->liquid_glass_data.chromatic_aberration = value;
 
 	arrange_root();
 

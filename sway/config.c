@@ -365,11 +365,16 @@ static void config_defaults(struct sway_config *config) {
 	config->blur_data = blur_data_get_default();
 
 	config->liquid_glass_enabled = false;
-	config->liquid_glass_data.surface_type = LIQUID_GLASS_SURFACE_CONVEX_SQUIRCLE;
+	config->liquid_glass_data.surface_type = LIQUID_GLASS_SURFACE_CONCAVE;
 	config->liquid_glass_data.bezel_width = 20.0f;
 	config->liquid_glass_data.thickness = 1.0f;
 	config->liquid_glass_data.refraction_index = 1.5f;
 	config->liquid_glass_data.specular_opacity = 0.4f;
+	config->liquid_glass_data.specular_angle = -60.0f;
+	config->liquid_glass_data.brightness_boost = 1.05f;
+	config->liquid_glass_data.saturation_boost = 1.0f;
+	config->liquid_glass_data.noise_intensity = 0.02f;
+	config->liquid_glass_data.chromatic_aberration = 0.5f;
 
 	config->shadow_enabled = false;
 	config->shadows_on_csd_enabled = false;

@@ -2,9 +2,9 @@
     <img src="assets/swayfx_logo.svg" width="256" alt="swayfx logo">
 </p>
 
-### Note: this is a fork of the original [swayfx](https://github.com/WillPower3309/swayfx) repository.
-
 Sway is an incredible window manager, and certainly one of the most well established Wayland window managers. However, it is restricted to only include the functionality that existed in i3. This fork ditches the simple `wlr_renderer`, and replaces it with our `fx_renderer` (via [scenefx](https://github.com/wlrfx/scenefx)), capable of rendering with fancy GLES2 effects.
+
+### Note: this is a fork of the original [swayfx](https://github.com/WillPower3309/swayfx) repository.
 
 SwayFX expands Sway's feature set to include eye-candy that many users have been asking for:
 
@@ -12,19 +12,15 @@ SwayFX expands Sway's feature set to include eye-candy that many users have been
 + **Shadows**: Real-time window drop shadows.
 + **Rounded Corners**: Anti-aliased rounded corners for windows, borders, and titlebars.
 + **Animations**: Smooth window movement and resizing animations.
-+ **Liquid Glass (Experimental)**: A unique refractive glass effect.
++ **New: Liquid Glass (Experimental)**: A unique refractive glass effect.
 + **Dimming**: Dim unfocused windows to help you focus.
 + **Layer Shell Effects**: Apply blur, shadows, and rounded corners to panels and notifications.
 + **Scratchpad treated as minimize**: Allows docks and taskbars to correctly interpret minimize/unminimize requests.
 + **Nixified**: First-class support for Nix and NixOS.
 
 <p align="center">
-    <img src="assets/swayfx_screenshot.jpg" width="500"/>
+    <img src="assets/preview.png" width="500"/>
 </p>
-
-For Fedora users, SwayFX is available in [COPR](https://copr.fedorainfracloud.org/coprs/swayfx/swayfx/) or in the [Terra repository](https://terra.fyralabs.com).
-
-[Join our Discord](https://discord.gg/qsSx397rkh)
 
 ## New Configuration Options
 
@@ -86,11 +82,16 @@ Apply effects to specific layer shell namespaces (e.g., "waybar", "notifications
 ### Liquid Glass (Experimental)
 A refractive glass effect that distorts the background.
 - `liquid_glass <enable|disable>`
-- `liquid_glass_surface <convex_circle|convex_squircle|concave|lip>`
-- `liquid_glass_bezel_width <pixels>`
-- `liquid_glass_thickness <float>`
+- `liquid_glass_bezel_width <float>`
+- `liquid_glass_brightness_boost <float>`
+- `liquid_glass_chromatic_aberration <float>`
+- `liquid_glass_noise_intensity <float>`
 - `liquid_glass_refraction_index <float>`
+- `liquid_glass_saturation_boost <float>`
 - `liquid_glass_specular_opacity <float>`
+- `liquid_glass_specular_angle <float>`
+- `liquid_glass_surface <convex_circle|convex_squircle|concave|lip>`
+- `liquid_glass_thickness <float>`
 
 ### Miscellaneous
 - `titlebar_separator <enable|disable>`: Show or hide the separator between the titlebar and window content.
@@ -98,7 +99,7 @@ A refractive glass effect that distorts the background.
 
 ## Roadmap
 
-+ [x] Improved Liquid Glass stability and performance.
++ Improve Liquid Glass stability and performance.
 
 ## Compiling From Source
 
@@ -136,10 +137,6 @@ meson build/
 ninja -C build/
 sudo ninja -C build/ install
 ```
-
-## Contributing
-
-SwayFX welcomes contributions! We focus on eye-candy and UX improvements. If you have an idea, feel free to open an issue or a pull request.
 
 ## Acknowledgements
 
