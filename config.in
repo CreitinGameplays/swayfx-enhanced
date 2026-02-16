@@ -34,6 +34,9 @@ shadows_on_csd enable
 # dim_inactive_colors.unfocused <hex color>
 # dim_inactive_colors.urgent <hex color> 
 
+# Fade-in/out window animations
+animation_duration_ms 300
+
 # LIQUID GLASS
 liquid_glass enable
 liquid_glass_surface concave
