@@ -34,6 +34,16 @@ shadows_on_csd enable
 # dim_inactive_colors.unfocused <hex color>
 # dim_inactive_colors.urgent <hex color> 
 
+# LIQUID GLASS
+liquid_glass enable
+liquid_glass_surface concave
+liquid_glass_brightness_boost 1.3
+liquid_glass_saturation_boost 1.1
+liquid_glass_bezel_width 80
+liquid_glass_thickness 1.8
+liquid_glass_refraction_index 1.5
+liquid_glass_specular_opacity 0.4
+
 # Default config for Sway
 #
 # Copy this to ~/.config/sway/config and edit it to your liking.
