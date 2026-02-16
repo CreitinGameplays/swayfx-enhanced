@@ -22,10 +22,6 @@ SwayFX expands Sway's feature set to include eye-candy that many users have been
     <img src="assets/preview.png" width="500"/>
 </p>
 
-## New Configuration Options
-
-- This SwayFX fork brings an experimental implementation of **Liquid Glass**. Check out below.
-
 ### Animations
 Control the duration of window movement and resizing animations.
 - `animation_duration_ms <value>`: Duration in milliseconds (0-5000, default: 0).
