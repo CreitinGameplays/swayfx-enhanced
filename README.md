@@ -1,6 +1,7 @@
 <p align="center">
     <img src="assets/swayfx_logo.svg" width="256" alt="swayfx logo">
 </p>
+
 [SwayFX-Enhanced](https://github.com/CreitinGameplays/swayfx-enhanced)
 
 Sway is an incredible window manager, and certainly one of the most well established Wayland window managers. However, it is restricted to only include the functionality that existed in i3. This fork ditches the simple `wlr_renderer`, and replaces it with our `fx_renderer` (via [scenefx](https://github.com/wlrfx/scenefx)), capable of rendering with fancy GLES2 effects.
