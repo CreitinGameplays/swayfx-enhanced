@@ -24,6 +24,7 @@ static bool get_direction_from_next_prev(struct sway_container *container,
 	if (strcasecmp(name, "prev") == 0) {
 		switch (parent_layout) {
 		case L_HORIZ:
+		case L_SCROLL_H:
 		case L_TABBED:
 			*out = WLR_DIRECTION_LEFT;
 			break;
@@ -39,6 +40,7 @@ static bool get_direction_from_next_prev(struct sway_container *container,
 	} else if (strcasecmp(name, "next") == 0) {
 		switch (parent_layout) {
 		case L_HORIZ:
+		case L_SCROLL_H:
 		case L_TABBED:
 			*out = WLR_DIRECTION_RIGHT;
 			break;
@@ -93,7 +95,7 @@ static struct sway_node *get_node_in_output_direction(
 	if (ws->tiling->length > 0) {
 		switch (dir) {
 		case WLR_DIRECTION_LEFT:
-			if (ws->layout == L_HORIZ || ws->layout == L_TABBED) {
+			if (layout_is_horizontal(ws->layout)) {
 				// get most right child of new output
 				container = ws->tiling->items[ws->tiling->length-1];
 			} else {
@@ -101,7 +103,7 @@ static struct sway_node *get_node_in_output_direction(
 			}
 			break;
 		case WLR_DIRECTION_RIGHT:
-			if (ws->layout == L_HORIZ || ws->layout == L_TABBED) {
+			if (layout_is_horizontal(ws->layout)) {
 				// get most left child of new output
 				container = ws->tiling->items[0];
 			} else {
@@ -109,7 +111,7 @@ static struct sway_node *get_node_in_output_direction(
 			}
 			break;
 		case WLR_DIRECTION_UP:
-			if (ws->layout == L_VERT || ws->layout == L_STACKED) {
+			if (layout_is_vertical(ws->layout)) {
 				// get most bottom child of new output
 				container = ws->tiling->items[ws->tiling->length-1];
 			} else {
@@ -117,7 +119,7 @@ static struct sway_node *get_node_in_output_direction(
 			}
 			break;
 		case WLR_DIRECTION_DOWN:
-			if (ws->layout == L_VERT || ws->layout == L_STACKED) {
+			if (layout_is_vertical(ws->layout)) {
 				// get most top child of new output
 				container = ws->tiling->items[0];
 			} else {
@@ -163,12 +165,12 @@ static struct sway_node *node_get_in_direction_tiling(
 		list_t *siblings = container_get_siblings(current);
 
 		if (dir == WLR_DIRECTION_LEFT || dir == WLR_DIRECTION_RIGHT) {
-			if (parent_layout == L_HORIZ || parent_layout == L_TABBED) {
+			if (layout_is_horizontal(parent_layout)) {
 				can_move = true;
 				desired = idx + (dir == WLR_DIRECTION_LEFT ? -1 : 1);
 			}
 		} else {
-			if (parent_layout == L_VERT || parent_layout == L_STACKED) {
+			if (layout_is_vertical(parent_layout)) {
 				can_move = true;
 				desired = idx + (dir == WLR_DIRECTION_UP ? -1 : 1);
 			}

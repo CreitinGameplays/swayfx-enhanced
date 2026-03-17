@@ -18,6 +18,10 @@
 // multiple of 2.
 #define DROP_SPLIT_INDICATOR 10
 
+#define DRAG_SCROLL_EDGE_THRESHOLD 96
+#define DRAG_SCROLL_MIN_SPEED 400
+#define DRAG_SCROLL_MAX_SPEED 2400
+
 struct seatop_move_tiling_event {
 	struct sway_container *con;
 	struct sway_node *target_node;
@@ -28,6 +32,7 @@ struct seatop_move_tiling_event {
 	bool insert_after_target;
 	struct wlr_scene_rect *indicator_rect;
 	struct wlr_scene_blur *indicator_blur;
+	uint32_t last_auto_scroll_time_msec;
 };
 
 static void handle_end(struct sway_seat *seat) {
@@ -177,9 +182,182 @@ static void update_indicator(struct seatop_move_tiling_event *e, struct wlr_box 
 	wlr_scene_blur_set_corner_radii(e->indicator_blur, corner_radii_all(corner_radius_real));
 }
 
-static void handle_motion_postthreshold(struct sway_seat *seat) {
+static bool container_is_scrollable_column(struct sway_container *con) {
+	return con && !con->pending.parent && con->pending.workspace &&
+		con->pending.workspace->layout == L_SCROLL_H;
+}
+
+static int get_scrollable_content_width(struct sway_workspace *ws) {
+	int content_width = 0;
+	for (int i = 0; i < ws->tiling->length; ++i) {
+		struct sway_container *child = ws->tiling->items[i];
+		content_width += child->pending.width;
+		if (i + 1 < ws->tiling->length) {
+			content_width += ws->gaps_inner;
+		}
+	}
+	return content_width;
+}
+
+static int clamp_scrollable_target(struct sway_workspace *ws, int target) {
+	struct wlr_box box;
+	workspace_get_box(ws, &box);
+	int max_target = get_scrollable_content_width(ws) - box.width;
+	if (max_target < 0) {
+		max_target = 0;
+	}
+	if (target < 0) {
+		return 0;
+	}
+	if (target > max_target) {
+		return max_target;
+	}
+	return target;
+}
+
+static bool auto_scroll_scrollable_drag(struct sway_seat *seat,
+		struct seatop_move_tiling_event *e, uint32_t time_msec) {
+	if (!container_is_scrollable_column(e->con)) {
+		e->last_auto_scroll_time_msec = time_msec;
+		return false;
+	}
+
+	struct sway_workspace *ws = e->con->pending.workspace;
+	if (!ws || !workspace_is_visible(ws)) {
+		e->last_auto_scroll_time_msec = time_msec;
+		return false;
+	}
+
+	struct wlr_box box;
+	workspace_get_box(ws, &box);
+	if (box.width <= 0) {
+		e->last_auto_scroll_time_msec = time_msec;
+		return false;
+	}
+
+	int direction = 0;
+	int distance = 0;
+	double cursor_x = seat->cursor->cursor->x;
+	if (cursor_x < box.x + DRAG_SCROLL_EDGE_THRESHOLD) {
+		direction = -1;
+		distance = box.x + DRAG_SCROLL_EDGE_THRESHOLD - cursor_x;
+	} else if (cursor_x > box.x + box.width - DRAG_SCROLL_EDGE_THRESHOLD) {
+		direction = 1;
+		distance = cursor_x - (box.x + box.width - DRAG_SCROLL_EDGE_THRESHOLD);
+	} else {
+		e->last_auto_scroll_time_msec = time_msec;
+		return false;
+	}
+
+	if (distance < 0) {
+		distance = 0;
+	} else if (distance > DRAG_SCROLL_EDGE_THRESHOLD) {
+		distance = DRAG_SCROLL_EDGE_THRESHOLD;
+	}
+
+	uint32_t delta = e->last_auto_scroll_time_msec == 0 ? 16 :
+		time_msec - e->last_auto_scroll_time_msec;
+	if (delta == 0) {
+		delta = 16;
+	} else if (delta > 32) {
+		delta = 32;
+	}
+	e->last_auto_scroll_time_msec = time_msec;
+
+	int speed = DRAG_SCROLL_MIN_SPEED +
+		(DRAG_SCROLL_MAX_SPEED - DRAG_SCROLL_MIN_SPEED) * distance /
+		DRAG_SCROLL_EDGE_THRESHOLD;
+	int amount = speed * (int)delta / 1000;
+	if (amount < 1) {
+		amount = 1;
+	}
+
+	int target = clamp_scrollable_target(ws,
+		ws->target_scroll_x + direction * amount);
+	if (target == ws->target_scroll_x) {
+		return false;
+	}
+
+	ws->scroll_follow_focus = false;
+	ws->target_scroll_x = target;
+	arrange_workspace(ws);
+	return true;
+}
+
+static void update_scrollable_indicator(struct seatop_move_tiling_event *e,
+		struct sway_workspace *ws, int edge_x) {
+	struct wlr_box workspace_box;
+	workspace_get_box(ws, &workspace_box);
+
+	struct wlr_box box = {
+		.x = edge_x - DROP_SPLIT_INDICATOR / 2,
+		.y = workspace_box.y,
+		.width = DROP_SPLIT_INDICATOR,
+		.height = workspace_box.height,
+	};
+
+	if (box.x < workspace_box.x) {
+		box.x = workspace_box.x;
+	}
+	int max_x = workspace_box.x + workspace_box.width - box.width;
+	if (box.x > max_x) {
+		box.x = max_x;
+	}
+	update_indicator(e, &box);
+}
+
+static bool handle_motion_scrollable_column(struct sway_seat *seat,
+		struct seatop_move_tiling_event *e, struct sway_node *node) {
+	if (!container_is_scrollable_column(e->con)) {
+		return false;
+	}
+
+	struct sway_workspace *ws = NULL;
+	struct sway_container *target_column = NULL;
+	if (node) {
+		if (node->type == N_WORKSPACE) {
+			ws = node->sway_workspace;
+		} else if (node->type == N_CONTAINER) {
+			target_column = container_toplevel_ancestor(node->sway_container);
+			ws = target_column ? target_column->pending.workspace : NULL;
+		}
+	}
+
+	if (!ws || ws->layout != L_SCROLL_H) {
+		return false;
+	}
+
+	if (target_column == e->con || node_has_ancestor(node, &e->con->node)) {
+		target_column = NULL;
+	}
+
+	if (target_column && container_is_scrollable_column(target_column)) {
+		bool after = seat->cursor->cursor->x >=
+			target_column->pending.x + target_column->pending.width / 2.0;
+		int edge_x = after ?
+			target_column->pending.x + target_column->pending.width :
+			target_column->pending.x;
+		e->target_node = &target_column->node;
+		e->target_edge = after ? WLR_EDGE_RIGHT : WLR_EDGE_LEFT;
+		e->split_target = false;
+		update_scrollable_indicator(e, ws, edge_x);
+		return true;
+	}
+
+	struct wlr_box box;
+	workspace_get_box(ws, &box);
+	bool after = seat->cursor->cursor->x >= box.x + box.width / 2.0;
+	e->target_node = &ws->node;
+	e->target_edge = after ? WLR_EDGE_RIGHT : WLR_EDGE_LEFT;
+	e->split_target = false;
+	update_scrollable_indicator(e, ws, after ? box.x + box.width : box.x);
+	return true;
+}
+
+static void handle_motion_postthreshold(struct sway_seat *seat, uint32_t time_msec) {
 	struct seatop_move_tiling_event *e = seat->seatop_data;
 	e->split_target = false;
+	auto_scroll_scrollable_drag(seat, e, time_msec);
 	struct wlr_surface *surface = NULL;
 	double sx, sy;
 	struct sway_cursor *cursor = seat->cursor;
@@ -190,6 +368,10 @@ static void handle_motion_postthreshold(struct sway_seat *seat) {
 		// Eg. hovered over a layer surface such as swaybar
 		e->target_node = NULL;
 		e->target_edge = WLR_EDGE_NONE;
+		return;
+	}
+
+	if (handle_motion_scrollable_column(seat, e, node)) {
 		return;
 	}
 
@@ -325,7 +507,7 @@ static void handle_motion_postthreshold(struct sway_seat *seat) {
 static void handle_pointer_motion(struct sway_seat *seat, uint32_t time_msec) {
 	struct seatop_move_tiling_event *e = seat->seatop_data;
 	if (e->threshold_reached) {
-		handle_motion_postthreshold(seat);
+		handle_motion_postthreshold(seat, time_msec);
 	} else {
 		handle_motion_prethreshold(seat);
 	}
@@ -339,11 +521,73 @@ static bool is_parallel(enum sway_container_layout layout,
 	return layout_is_horiz == edge_is_horiz;
 }
 
+static int clamp_workspace_insert_index(struct sway_workspace *ws, int index) {
+	if (index < 0) {
+		return 0;
+	}
+	if (index > ws->tiling->length) {
+		return ws->tiling->length;
+	}
+	return index;
+}
+
+static bool finalize_scrollable_move(struct sway_seat *seat) {
+	struct seatop_move_tiling_event *e = seat->seatop_data;
+	struct sway_container *con = e->con;
+	if (!container_is_scrollable_column(con) || !e->target_node) {
+		return false;
+	}
+
+	struct sway_workspace *old_ws = con->pending.workspace;
+	struct sway_workspace *new_ws = e->target_node->type == N_WORKSPACE ?
+		e->target_node->sway_workspace :
+		e->target_node->sway_container->pending.workspace;
+	if (!new_ws || new_ws->layout != L_SCROLL_H) {
+		return false;
+	}
+
+	container_detach(con);
+
+	int index = 0;
+	if (e->target_node->type == N_CONTAINER) {
+		struct sway_container *target =
+			container_toplevel_ancestor(e->target_node->sway_container);
+		int target_index = list_find(new_ws->tiling, target);
+		if (target_index < 0) {
+			index = new_ws->tiling->length;
+		} else {
+			index = target_index + (e->target_edge == WLR_EDGE_RIGHT);
+		}
+	} else {
+		index = e->target_edge == WLR_EDGE_RIGHT ? new_ws->tiling->length : 0;
+	}
+
+	workspace_insert_tiling_direct(new_ws, con,
+		clamp_workspace_insert_index(new_ws, index));
+
+	if (con->view) {
+		ipc_event_window(con, "move");
+	}
+
+	arrange_workspace(new_ws);
+	if (old_ws != new_ws) {
+		arrange_workspace(old_ws);
+	}
+
+	transaction_commit_dirty();
+	seatop_begin_default(seat);
+	return true;
+}
+
 static void finalize_move(struct sway_seat *seat) {
 	struct seatop_move_tiling_event *e = seat->seatop_data;
 
 	if (!e->target_node) {
 		seatop_begin_default(seat);
+		return;
+	}
+
+	if (finalize_scrollable_move(seat)) {
 		return;
 	}
 

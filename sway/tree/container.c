@@ -182,6 +182,10 @@ struct sway_container *container_create(struct sway_view *view) {
 
 	c->animation_state.animation = malloc(sizeof(struct animation));
 	*c->animation_state.animation = init_animation();
+	c->animation_state.open_animation = malloc(sizeof(struct animation));
+	*c->animation_state.open_animation = init_animation();
+	c->animation_state.open_animation->progress = 1.0f;
+	c->animation_state.open_animation->multiplier = 1.0f;
 	c->animation_state.delta_x = 0;
 	c->animation_state.delta_y = 0;
 	c->animation_state.delta_width = 0;
@@ -250,6 +254,20 @@ static struct border_colors *container_get_current_colors(
 	return colors;
 }
 
+float container_get_effective_alpha(struct sway_container *con) {
+	if (!con) {
+		return 1.0f;
+	}
+
+	float alpha = con->alpha;
+	if (con->animation_state.open_animation) {
+		alpha *= get_animated_value(0.0f, 1.0f,
+			*con->animation_state.open_animation);
+	}
+
+	return alpha;
+}
+
 static bool container_is_current_floating(struct sway_container *container) {
 	if (!container->current.parent && container->current.workspace &&
 			list_find(container->current.workspace->floating, container) != -1) {
@@ -292,7 +310,7 @@ void container_update(struct sway_container *con) {
 	struct border_colors *colors = container_get_current_colors(con);
 	list_t *siblings = NULL;
 	enum sway_container_layout layout = L_NONE;
-	float alpha = con->alpha;
+	float alpha = container_get_effective_alpha(con);
 
 	if (con->current.parent) {
 		siblings = con->current.parent->current.children;
@@ -629,8 +647,13 @@ void container_begin_destroy(struct sway_container *con) {
 	if (con->animation_state.animation->initialized) {
 		con->animation_state.animation->initialized = false;
 		wl_list_remove(&con->animation_state.animation->link);
-		free(con->animation_state.animation);
 	}
+	free(con->animation_state.animation);
+	if (con->animation_state.open_animation->initialized) {
+		con->animation_state.open_animation->initialized = false;
+		wl_list_remove(&con->animation_state.open_animation->link);
+	}
+	free(con->animation_state.open_animation);
 }
 
 void container_reap_empty(struct sway_container *con) {
@@ -837,6 +860,9 @@ size_t container_build_representation(enum sway_container_layout layout,
 	case L_HORIZ:
 		lenient_strcat(buffer, "H[");
 		break;
+	case L_SCROLL_H:
+		lenient_strcat(buffer, "C[");
+		break;
 	case L_TABBED:
 		lenient_strcat(buffer, "T[");
 		break;
@@ -975,7 +1001,151 @@ static void floating_natural_resize(struct sway_container *con) {
 	}
 }
 
+bool container_is_maximized(struct sway_container *con) {
+	return con && con->maximized_state.enabled;
+}
+
+static void restore_maximized_tiled_scrollable(struct sway_container *con,
+		struct sway_workspace *workspace, int index,
+		double width_fraction, double height_fraction) {
+	if (!workspace) {
+		return;
+	}
+
+	if (con->scratchpad) {
+		root_scratchpad_remove_container(con);
+	}
+
+	container_detach(con);
+	if (index < 0) {
+		index = 0;
+	} else if (index > workspace->tiling->length) {
+		index = workspace->tiling->length;
+	}
+	workspace_insert_tiling_direct(workspace, con, index);
+
+	if (con->view) {
+		view_set_tiled(con->view, true);
+		if (con->view->using_csd) {
+			con->pending.border = con->saved_border;
+			if (con->view->xdg_decoration) {
+				struct sway_xdg_decoration *deco = con->view->xdg_decoration;
+				wlr_xdg_toplevel_decoration_v1_set_mode(
+						deco->wlr_xdg_decoration,
+						WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+			}
+		}
+	}
+
+	con->width_fraction = width_fraction;
+	con->height_fraction = height_fraction;
+}
+
+void container_clear_maximized(struct sway_container *con) {
+	if (!container_is_maximized(con)) {
+		return;
+	}
+	con->maximized_state.enabled = false;
+	if (con->view) {
+		view_set_maximized(con->view, false);
+	}
+}
+
+void container_reconcile_maximized(struct sway_container *con) {
+	if (!container_is_maximized(con) || !container_is_floating(con) ||
+			!con->pending.workspace) {
+		return;
+	}
+
+	struct wlr_box box;
+	workspace_get_box(con->pending.workspace, &box);
+	con->pending.x = box.x;
+	con->pending.y = box.y;
+	con->pending.width = box.width;
+	con->pending.height = box.height;
+	node_set_dirty(&con->node);
+}
+
+void container_set_maximized(struct sway_container *con, bool enable) {
+	if (!con) {
+		return;
+	}
+	if (container_is_floating_or_child(con) ||
+			(con->pending.workspace &&
+			con->pending.workspace->layout == L_SCROLL_H)) {
+		con = container_toplevel_ancestor(con);
+	}
+	if (container_is_maximized(con) == enable) {
+		return;
+	}
+	if (enable && !con->pending.workspace) {
+		return;
+	}
+
+	if (enable) {
+		if (con->pending.fullscreen_mode != FULLSCREEN_NONE) {
+			container_set_fullscreen(con, FULLSCREEN_NONE);
+		}
+
+		con->maximized_state.was_floating = container_is_floating(con);
+		con->maximized_state.x = con->pending.x;
+		con->maximized_state.y = con->pending.y;
+		con->maximized_state.width = con->pending.width;
+		con->maximized_state.height = con->pending.height;
+		con->maximized_state.workspace = con->pending.workspace;
+		con->maximized_state.width_fraction = con->width_fraction;
+		con->maximized_state.height_fraction = con->height_fraction;
+		con->maximized_state.tiling_index = con->pending.workspace ?
+			list_find(con->pending.workspace->tiling, con) : -1;
+
+		if (!con->maximized_state.was_floating) {
+			container_set_floating(con, true);
+		}
+
+		con->maximized_state.enabled = true;
+		if (con->view) {
+			view_set_maximized(con->view, true);
+		}
+		container_reconcile_maximized(con);
+		if (container_is_floating(con)) {
+			container_raise_floating(con);
+		}
+	} else {
+		bool was_floating = con->maximized_state.was_floating;
+		double x = con->maximized_state.x;
+		double y = con->maximized_state.y;
+		double width = con->maximized_state.width;
+		double height = con->maximized_state.height;
+		struct sway_workspace *workspace = con->maximized_state.workspace;
+		int tiling_index = con->maximized_state.tiling_index;
+		double width_fraction = con->maximized_state.width_fraction;
+		double height_fraction = con->maximized_state.height_fraction;
+
+		container_clear_maximized(con);
+		if (was_floating) {
+			con->pending.x = x;
+			con->pending.y = y;
+			con->pending.width = width;
+			con->pending.height = height;
+			arrange_container(con);
+		} else if (workspace && workspace->layout == L_SCROLL_H) {
+			restore_maximized_tiled_scrollable(con, workspace, tiling_index,
+				width_fraction, height_fraction);
+		} else {
+			container_set_floating(con, false);
+		}
+	}
+
+	container_end_mouse_operation(con);
+}
+
 void container_floating_resize_and_center(struct sway_container *con) {
+	if (container_is_maximized(con)) {
+		container_reconcile_maximized(con);
+		arrange_container(con);
+		return;
+	}
+
 	struct sway_workspace *ws = con->pending.workspace;
 	if (!ws) {
 		// On scratchpad, just resize
@@ -1069,6 +1239,9 @@ void container_set_resizing(struct sway_container *con, bool resizing) {
 void container_set_floating(struct sway_container *container, bool enable) {
 	if (container_is_floating(container) == enable) {
 		return;
+	}
+	if (container_is_maximized(container)) {
+		container_clear_maximized(container);
 	}
 
 	struct sway_seat *seat = input_manager_current_seat();
@@ -1189,6 +1362,9 @@ void container_get_box(struct sway_container *container, struct wlr_box *box) {
  */
 void container_floating_translate(struct sway_container *con,
 		double x_amount, double y_amount) {
+	if ((x_amount != 0 || y_amount != 0) && container_is_maximized(con)) {
+		container_clear_maximized(con);
+	}
 	con->pending.x += x_amount;
 	con->pending.y += y_amount;
 	con->pending.content_x += x_amount;
@@ -1786,7 +1962,9 @@ static bool is_parallel(enum sway_container_layout first,
 	switch (first) {
 	case L_TABBED:
 	case L_HORIZ:
-		return second == L_TABBED || second == L_HORIZ;
+	case L_SCROLL_H:
+		return second == L_TABBED || second == L_HORIZ ||
+			second == L_SCROLL_H;
 	case L_STACKED:
 	case L_VERT:
 		return second == L_STACKED || second == L_VERT;
@@ -1798,8 +1976,10 @@ static bool is_parallel(enum sway_container_layout first,
 static bool container_is_squashable(struct sway_container *con,
 		struct sway_container *child) {
 	enum sway_container_layout gp_layout = container_parent_layout(con);
-	return (con->pending.layout == L_HORIZ || con->pending.layout == L_VERT) &&
-		(child->pending.layout == L_HORIZ || child->pending.layout == L_VERT) &&
+	return (con->pending.layout == L_HORIZ || con->pending.layout == L_VERT ||
+			con->pending.layout == L_SCROLL_H) &&
+		(child->pending.layout == L_HORIZ || child->pending.layout == L_VERT ||
+			child->pending.layout == L_SCROLL_H) &&
 		!is_parallel(con->pending.layout, child->pending.layout) &&
 		is_parallel(gp_layout, child->pending.layout);
 }
@@ -2042,7 +2222,7 @@ bool container_has_liquid_glass(struct sway_container *con) {
 	}
 
 	bool transparent = false;
-	if (con->alpha < 1.0f) {
+	if (container_get_effective_alpha(con) < 1.0f) {
 		transparent = true;
 	} else if (con->view && con->view->surface) {
 		struct wlr_surface *surface = con->view->surface;
@@ -2071,5 +2251,3 @@ bool container_has_liquid_glass(struct sway_container *con) {
 
 	return true;
 }
-
-

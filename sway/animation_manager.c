@@ -19,7 +19,8 @@ struct animation_manager {
 struct animation init_animation() {
 	return (struct animation){
 		.progress = 0.0f,
-		.multiplier = 0.0f
+		.multiplier = 0.0f,
+		.duration_scale = 1.0f,
 	};
 }
 
@@ -31,7 +32,10 @@ float ease_out_cubic(float t) {
 int animation_timer() {
 	struct animation *animation, *tmp;
 	wl_list_for_each_reverse_safe(animation, tmp, &animation_manager.animations, link) {
-		animation->progress = MIN(animation->progress + animation_manager.progress_delta, 1.0f);
+		float duration_scale =
+			animation->duration_scale > 0.0f ? animation->duration_scale : 1.0f;
+		animation->progress = MIN(animation->progress +
+			animation_manager.progress_delta / duration_scale, 1.0f);
 		animation->multiplier = ease_out_cubic(animation->progress);
 		if (animation->progress == 1.0f) {
 			wl_list_remove(&animation->link);
@@ -107,4 +111,3 @@ float get_animated_value(float from, float to, struct animation animation) {
 	}
 	return lerp(from, to, animation.multiplier);
 }
-

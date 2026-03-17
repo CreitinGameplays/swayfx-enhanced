@@ -13,7 +13,8 @@ SwayFX expands Sway's feature set to include eye-candy that many users have been
 + **Blur**: Sophisticated background blur for windows and layers.
 + **Shadows**: Real-time window drop shadows.
 + **Rounded Corners**: Anti-aliased rounded corners for windows, borders, and titlebars.
-+ **Animations**: Smooth window movement and resizing animations.
++ **Animations**: Smooth window movement and resizing animations, plus a fast default fade-in when windows map.
++ **Scrollable Tiling**: Fixed-width horizontal columns with animated workspace panning, wrap-around navigation, and direct column resizing.
 + **New: Liquid Glass (Experimental)**: A unique refractive glass effect.
 + **Dimming**: Dim unfocused windows to help you focus.
 + **Layer Shell Effects**: Apply blur, shadows, and rounded corners to panels and notifications.
@@ -27,7 +28,31 @@ SwayFX expands Sway's feature set to include eye-candy that many users have been
 
 ### Animations
 Control the duration of window movement and resizing animations.
-- `animation_duration_ms <value>`: Duration in milliseconds (0-5000, default: 0).
+- `animation_duration_ms <value>`: Duration in milliseconds (0-5000, default: 90).
+
+New windows also fade in by default using the same animation timing.
+
+Default config convenience:
+- `Mod+m`: Maximize the focused window to the current workspace without entering fullscreen.
+
+### Scrollable Tiling
+Enable a niri-style horizontal strip layout for top-level tiled windows.
+- `workspace_layout scrollable`: Make new workspaces default to the scrollable layout.
+- `layout scrollable`: Switch the current workspace to the scrollable layout. In config, this also acts as a default-layout alias.
+- `layout splith|splitv|stacking|tabbed|default`: Switch back out of scrollable mode.
+- `scroll left|right [<px> px]`: Pan the scrollable workspace camera. Defaults to `100px` when no amount is given.
+- `scroll center`: Center the focused column in the visible area.
+- `scroll home|end`: Jump the camera to the beginning or end of the workspace strip.
+- `scroll follow`: Return to focus-following camera behavior.
+
+Current interaction behavior:
+- New tiled windows open as new top-level columns.
+- `Shift` + mouse wheel moves focus left or right across columns using the focused window, not the pointer location.
+- Focus navigation wraps around at the ends of the strip.
+- `Mod` + right click resizes scrollable columns directly.
+- Tiling drag gestures reorder top-level columns instead of splitting them.
+- Dragging a column near the left or right edge auto-scrolls the workspace strip.
+- The workspace camera animates smoothly and uses edge handoff instead of hard centering on every focus change.
 
 ### Blur
 Global blur settings and per-window toggles.
@@ -147,4 +172,4 @@ SwayFX is a community project built on the shoulders of giants. We thank:
 - Our amazing community for testing and supporting the project.
 
 ### todo
-- [ ] steal Niriwm features
+- [x] steal Niriwm features

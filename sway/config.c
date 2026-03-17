@@ -258,6 +258,7 @@ static void config_defaults(struct sway_config *config) {
 	if (!(config->floating_scroll_right_cmd = strdup(""))) goto cleanup;
 	config->default_layout = L_NONE;
 	config->default_orientation = L_NONE;
+	config->default_workspace_layout = L_NONE;
 	if (!(config->font = strdup("monospace 10"))) goto cleanup;
 	config->font_description = pango_font_description_from_string(config->font);
 	config->urgent_timeout = 500;
@@ -351,7 +352,7 @@ static void config_defaults(struct sway_config *config) {
 	color_to_rgba(config->border_colors.background, 0xFFFFFFFF);
 
 	// SwayFX defaults
-	config->animation_duration_ms = 0.0f;
+	config->animation_duration_ms = 90.0f;
 
 	config->corner_radius = 0;
 	config->smart_corner_radius = false;

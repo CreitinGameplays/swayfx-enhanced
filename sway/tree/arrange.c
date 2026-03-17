@@ -4,6 +4,8 @@
 #include <string.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
+#include "sway/input/input-manager.h"
+#include "sway/input/seat.h"
 #include "sway/tree/arrange.h"
 #include "sway/tree/container.h"
 #include "sway/output.h"
@@ -11,6 +13,88 @@
 #include "sway/tree/view.h"
 #include "list.h"
 #include "log.h"
+
+static const double SCROLL_DEFAULT_WIDTH_FRACTION = 0.55;
+
+static struct sway_container *workspace_get_pending_scroll_focus(
+		struct sway_workspace *workspace) {
+	struct sway_seat *seat = input_manager_current_seat();
+	struct sway_container *focus = seat ?
+		seat_get_focus_inactive_tiling(seat, workspace) : NULL;
+	if (focus) {
+		while (focus->pending.parent) {
+			focus = focus->pending.parent;
+		}
+	} else if (workspace->tiling->length > 0) {
+		focus = workspace->tiling->items[0];
+	}
+	return focus;
+}
+
+static int get_pending_scroll_layout_content_width(list_t *children, int gaps) {
+	int content_width = 0;
+	for (int i = 0; i < children->length; ++i) {
+		struct sway_container *child = children->items[i];
+		content_width += child->pending.width;
+		if (i + 1 < children->length) {
+			content_width += gaps;
+		}
+	}
+	return content_width;
+}
+
+static int clamp_pending_scroll_layout_target(struct sway_workspace *workspace,
+		int width, int target) {
+	int content_width = get_pending_scroll_layout_content_width(
+		workspace->tiling, workspace->gaps_inner);
+	int max_offset = content_width - width;
+	if (max_offset < 0) {
+		max_offset = 0;
+	}
+	if (target < 0) {
+		return 0;
+	}
+	if (target > max_offset) {
+		return max_offset;
+	}
+	return target;
+}
+
+static int get_pending_scroll_layout_target(struct sway_workspace *workspace,
+		int width) {
+	if (workspace->layout != L_SCROLL_H || workspace->tiling->length == 0 ||
+			width <= 0) {
+		return 0;
+	}
+
+	struct sway_container *focused =
+		workspace_get_pending_scroll_focus(workspace);
+	if (!focused) {
+		return 0;
+	}
+
+	int focused_x = 0;
+	for (int i = 0; i < workspace->tiling->length; ++i) {
+		struct sway_container *child = workspace->tiling->items[i];
+		if (child == focused) {
+			break;
+		}
+		focused_x += child->pending.width + workspace->gaps_inner;
+	}
+
+	int offset = clamp_pending_scroll_layout_target(workspace, width,
+		workspace->target_scroll_x);
+
+	int focused_left = focused_x;
+	int focused_right = focused_x + focused->pending.width;
+	if (focused_left < offset) {
+		offset = focused_left;
+	} else if (focused_right > offset + width) {
+		offset = focused_right - width;
+	}
+
+	return clamp_pending_scroll_layout_target(workspace, width, offset);
+}
 
 static void apply_horiz_layout(list_t *children, struct wlr_box *parent) {
 	if (!children->length) {
@@ -94,6 +178,42 @@ static void apply_horiz_layout(list_t *children, struct wlr_box *parent) {
 			child->pending.height = 0;
 		}
 		child_x += child->pending.width + inner_gap;
+	}
+}
+
+static void apply_scroll_layout(list_t *children, struct wlr_box *parent) {
+	if (!children->length) {
+		return;
+	}
+
+	double inner_gap = 0;
+	struct sway_container *child = children->items[0];
+	struct sway_workspace *ws = child->pending.workspace;
+	if (ws) {
+		inner_gap = ws->gaps_inner;
+	}
+	double child_x = parent->x;
+	for (int i = 0; i < children->length; ++i) {
+		struct sway_container *child = children->items[i];
+		if (child->width_fraction <= 0.0) {
+			if (child->current.width > 0 && parent->width > 0) {
+				child->width_fraction =
+					(double)child->current.width / parent->width;
+			} else {
+				child->width_fraction = SCROLL_DEFAULT_WIDTH_FRACTION;
+			}
+		}
+
+		int child_width = round(child->width_fraction * parent->width);
+		child_width = fmax(MIN_SANE_W, child_width);
+		child_width = fmin(parent->width, child_width);
+
+		child->child_total_width = parent->width;
+		child->pending.x = child_x;
+		child->pending.y = parent->y;
+		child->pending.width = child_width;
+		child->pending.height = parent->height;
+		child_x += child_width + inner_gap;
 	}
 }
 
@@ -214,6 +334,7 @@ static void apply_stacked_layout(list_t *children, struct wlr_box *parent) {
 static void arrange_floating(list_t *floating) {
 	for (int i = 0; i < floating->length; ++i) {
 		struct sway_container *floater = floating->items[i];
+		container_reconcile_maximized(floater);
 		arrange_container(floater);
 	}
 }
@@ -227,6 +348,9 @@ static void arrange_children(list_t *children,
 		break;
 	case L_VERT:
 		apply_vert_layout(children, parent);
+		break;
+	case L_SCROLL_H:
+		apply_scroll_layout(children, parent);
 		break;
 	case L_TABBED:
 		apply_tabbed_layout(children, parent);
@@ -319,6 +443,32 @@ void arrange_workspace(struct sway_workspace *workspace) {
 		workspace_get_box(workspace, &box);
 		arrange_children(workspace->tiling, workspace->layout, &box);
 		arrange_floating(workspace->floating);
+		if (workspace->layout == L_SCROLL_H) {
+			int visual_scroll_x = box.x - workspace->layers.tiling->node.x;
+			if (visual_scroll_x < 0) {
+				visual_scroll_x = 0;
+			}
+			workspace->scroll_x = visual_scroll_x;
+			if (workspace->scroll_animation_state.interactive_resize) {
+				workspace->target_scroll_x = visual_scroll_x;
+			} else if (workspace_get_pending_scroll_focus(workspace) !=
+					workspace->current.focused_inactive_child) {
+				workspace->scroll_follow_focus = true;
+				workspace->target_scroll_x =
+					get_pending_scroll_layout_target(workspace, box.width);
+			} else if (workspace->scroll_follow_focus) {
+				workspace->target_scroll_x =
+					get_pending_scroll_layout_target(workspace, box.width);
+			} else {
+				workspace->target_scroll_x =
+					clamp_pending_scroll_layout_target(workspace, box.width,
+					workspace->target_scroll_x);
+			}
+		} else {
+			workspace->scroll_x = 0;
+			workspace->target_scroll_x = 0;
+			workspace->scroll_follow_focus = true;
+		}
 	}
 }
 

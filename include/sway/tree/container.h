@@ -15,9 +15,18 @@ enum sway_container_layout {
 	L_NONE,
 	L_HORIZ,
 	L_VERT,
+	L_SCROLL_H,
 	L_STACKED,
 	L_TABBED,
 };
+
+static inline bool layout_is_horizontal(enum sway_container_layout layout) {
+	return layout == L_HORIZ || layout == L_TABBED || layout == L_SCROLL_H;
+}
+
+static inline bool layout_is_vertical(enum sway_container_layout layout) {
+	return layout == L_VERT || layout == L_STACKED;
+}
 
 enum sway_container_border {
 	B_NONE,
@@ -125,6 +134,17 @@ struct sway_container {
 	double saved_x, saved_y;
 	double saved_width, saved_height;
 
+	struct {
+		bool enabled;
+		bool was_floating;
+		double x, y;
+		double width, height;
+		struct sway_workspace *workspace;
+		int tiling_index;
+		double width_fraction;
+		double height_fraction;
+	} maximized_state;
+
 	// Used when the view changes to CSD unexpectedly. This will be a non-B_CSD
 	// border which we use to restore when the view returns to SSD.
 	enum sway_container_border saved_border;
@@ -160,6 +180,7 @@ struct sway_container {
 
 	struct {
 		struct animation *animation;
+		struct animation *open_animation;
 		int delta_x;
 		int delta_y;
 		int delta_width;
@@ -235,6 +256,14 @@ void container_floating_set_default_size(struct sway_container *con);
 void container_set_resizing(struct sway_container *con, bool resizing);
 
 void container_set_floating(struct sway_container *container, bool enable);
+
+bool container_is_maximized(struct sway_container *con);
+
+void container_set_maximized(struct sway_container *con, bool enable);
+
+void container_reconcile_maximized(struct sway_container *con);
+
+void container_clear_maximized(struct sway_container *con);
 
 void container_set_geometry_from_content(struct sway_container *con);
 
@@ -389,6 +418,8 @@ void container_arrange_title_bar(struct sway_container *con);
 void container_update(struct sway_container *con);
 
 void container_update_itself_and_parents(struct sway_container *con);
+
+float container_get_effective_alpha(struct sway_container *con);
 
 bool container_has_shadow(struct sway_container *con);
 

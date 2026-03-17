@@ -54,6 +54,8 @@ static const char *ipc_json_layout_description(enum sway_container_layout l) {
 		return "splitv";
 	case L_HORIZ:
 		return "splith";
+	case L_SCROLL_H:
+		return "scrollable";
 	case L_TABBED:
 		return "tabbed";
 	case L_STACKED:
@@ -69,6 +71,7 @@ static const char *ipc_json_orientation_description(enum sway_container_layout l
 	case L_VERT:
 		return "vertical";
 	case L_HORIZ:
+	case L_SCROLL_H:
 		return "horizontal";
 	default:
 		return "none";

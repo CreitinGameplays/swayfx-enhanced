@@ -539,6 +539,7 @@ struct sway_config {
 	char *floating_scroll_left_cmd;
 	char *floating_scroll_right_cmd;
 	enum sway_container_layout default_orientation;
+	enum sway_container_layout default_workspace_layout;
 	enum sway_container_layout default_layout;
 	char *font; // Used for IPC.
 	PangoFontDescription *font_description; // Used internally for rendering and validating.

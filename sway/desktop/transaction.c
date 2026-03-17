@@ -41,6 +41,21 @@ struct sway_transaction_instruction {
 	bool waiting;
 };
 
+static void animation_update_callback(void);
+
+static int get_container_scroll_x_adjustment(struct sway_container *con) {
+	if (!con || container_is_floating_or_child(con)) {
+		return 0;
+	}
+
+	struct sway_workspace *ws = con->current.workspace;
+	if (!ws || ws->current.layout != L_SCROLL_H) {
+		return 0;
+	}
+
+	return ws->layers.tiling->node.x - ws->current.x;
+}
+
 static struct sway_transaction *transaction_create(void) {
 	struct sway_transaction *transaction =
 		calloc(1, sizeof(struct sway_transaction));
@@ -110,6 +125,8 @@ static void copy_workspace_state(struct sway_workspace *ws,
 	state->y = ws->y;
 	state->width = ws->width;
 	state->height = ws->height;
+	state->scroll_x = ws->scroll_x;
+	state->target_scroll_x = ws->target_scroll_x;
 	state->layout = ws->layout;
 
 	state->output = ws->output;
@@ -381,7 +398,7 @@ static void arrange_children(enum sway_container_layout layout, list_t *children
 				disable_container(child);
 			}
 		}
-	} else if (layout == L_HORIZ) {
+	} else if (layout == L_HORIZ || layout == L_SCROLL_H) {
 		int off = 0;
 		for (int i = 0; i < children->length; i++) {
 			struct sway_container *child = children->items[i];
@@ -758,6 +775,63 @@ static void arrange_workspace_floating(struct sway_workspace *ws) {
 	}
 }
 
+static void stop_workspace_scroll_animation(struct sway_workspace *ws) {
+	struct animation *animation = ws->scroll_animation_state.animation;
+	if (animation && animation->initialized) {
+		animation->initialized = false;
+		wl_list_remove(&animation->link);
+	}
+	ws->scroll_animation_state.target_x_initialized = false;
+}
+
+static int get_animated_scroll_workspace_x(struct sway_workspace *ws,
+		int workspace_x) {
+	struct animation *animation = ws->scroll_animation_state.animation;
+	int current_x = workspace_x - ws->current.scroll_x;
+	int target_x = workspace_x - ws->current.target_scroll_x;
+	if (ws->scroll_animation_state.interactive_resize) {
+		stop_workspace_scroll_animation(ws);
+		return ws->layers.tiling->node.x;
+	}
+	if (!animation || !config->animation_duration_ms) {
+		if (animation && animation->initialized) {
+			animation->initialized = false;
+			wl_list_remove(&animation->link);
+		}
+		ws->scroll_animation_state.from_x = current_x;
+		ws->scroll_animation_state.target_x = target_x;
+		ws->scroll_animation_state.target_x_initialized = true;
+		return target_x;
+	}
+
+	if (!ws->scroll_animation_state.target_x_initialized) {
+		ws->scroll_animation_state.from_x = current_x;
+		ws->scroll_animation_state.target_x = target_x;
+		ws->scroll_animation_state.target_x_initialized = true;
+		if (current_x != target_x) {
+			add_animation(animation);
+			start_animations(&animation_update_callback);
+			return get_animated_value(current_x, target_x, *animation);
+		}
+		return target_x;
+	}
+
+	if (ws->scroll_animation_state.target_x != target_x) {
+		ws->scroll_animation_state.from_x = ws->layers.tiling->node.x;
+		ws->scroll_animation_state.target_x = target_x;
+		if (ws->scroll_animation_state.from_x != target_x) {
+			add_animation(animation);
+			start_animations(&animation_update_callback);
+		}
+	}
+
+	if (animation->initialized) {
+		return get_animated_value(ws->scroll_animation_state.from_x,
+			ws->scroll_animation_state.target_x, *animation);
+	}
+	return ws->scroll_animation_state.target_x;
+}
+
 static void arrange_workspace_tiling(struct sway_workspace *ws,
 		int width, int height) {
 	arrange_children(ws->current.layout, ws->current.tiling,
@@ -820,12 +894,21 @@ static void arrange_output(struct sway_output *output, int width, int height) {
 			} else {
 				struct wlr_box *area = &output->usable_area;
 				struct side_gaps *gaps = &child->current_gaps;
+				int workspace_width =
+					area->width - gaps->left - gaps->right;
+				int workspace_x = gaps->left + area->x;
+				if (child->current.layout == L_SCROLL_H) {
+					workspace_x =
+						get_animated_scroll_workspace_x(child, workspace_x);
+				} else {
+					stop_workspace_scroll_animation(child);
+				}
 
 				wlr_scene_node_set_position(&child->layers.tiling->node,
-					gaps->left + area->x, gaps->top + area->y);
+					workspace_x, gaps->top + area->y);
 
 				arrange_workspace_tiling(child,
-					area->width - gaps->left - gaps->right,
+					workspace_width,
 					area->height - gaps->top - gaps->bottom);
 				arrange_workspace_floating(child);
 			}
@@ -931,7 +1014,7 @@ static void arrange_root(struct sway_root *root) {
 	arrange_popups(root->layers.popup);
 }
 
-void animation_update_callback() {
+static void animation_update_callback(void) {
 	// if there's a pending transaction there will be a re-arrange anyway
 	if (!server.pending_transaction) {
 		arrange_root(root);
@@ -987,7 +1070,10 @@ static void transaction_apply(struct sway_transaction *transaction) {
 				if (con->view && con->current.workspace) {
 					int lx, ly;
 					wlr_scene_node_coords(&con->scene_tree->node, &lx, &ly);
-					con->animation_state.delta_x = lx - con->pending.x;
+					int scroll_x_adjustment =
+						get_container_scroll_x_adjustment(con);
+					con->animation_state.delta_x =
+						lx - (con->pending.x + scroll_x_adjustment);
 					con->animation_state.delta_y = ly - con->pending.y;
 					con->animation_state.delta_width = con->animation_state.current_width - con->pending.width;
 					con->animation_state.delta_height = con->animation_state.current_height - con->pending.height;

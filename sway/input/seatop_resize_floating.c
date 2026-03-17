@@ -38,6 +38,10 @@ static void handle_pointer_motion(struct sway_seat *seat, uint32_t time_msec) {
 	enum wlr_edges edge = e->edge;
 	struct sway_cursor *cursor = seat->cursor;
 
+	if (container_is_maximized(con)) {
+		container_clear_maximized(con);
+	}
+
 	// The amount the mouse has moved since the start of the resize operation
 	// Positive is down/right
 	double mouse_move_x = cursor->cursor->x - e->ref_lx;

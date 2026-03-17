@@ -1252,9 +1252,10 @@ static void seat_set_workspace_focus(struct sway_seat *seat, struct sway_node *n
 
 	seat->has_focus = true;
 
-	if (config->smart_gaps && new_workspace) {
-		// When smart gaps is on, gaps may change when the focus changes so
-		// the workspace needs to be arranged
+	if (new_workspace && (config->smart_gaps ||
+			new_workspace->layout == L_SCROLL_H)) {
+		// Smart gaps and scrollable workspaces can both change visible geometry
+		// when focus changes, so the workspace needs to be arranged.
 		arrange_workspace(new_workspace);
 	}
 }

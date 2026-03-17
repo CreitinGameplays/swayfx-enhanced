@@ -38,6 +38,12 @@
 #include "sway/xdg_decoration.h"
 #include "stringop.h"
 
+static void view_map_animation_update(void) {
+	if (!server.pending_transaction) {
+		arrange_root();
+	}
+}
+
 bool view_init(struct sway_view *view, enum sway_view_type type,
 		const struct sway_view_impl *impl) {
 	bool failed = false;
@@ -482,6 +488,16 @@ void view_set_tiled(struct sway_view *view, bool tiled) {
 	}
 }
 
+void view_set_maximized(struct sway_view *view, bool maximized) {
+	if (view->impl->set_maximized) {
+		view->impl->set_maximized(view, maximized);
+	}
+	if (view->foreign_toplevel) {
+		wlr_foreign_toplevel_handle_v1_set_maximized(
+				view->foreign_toplevel, maximized);
+	}
+}
+
 void view_close(struct sway_view *view) {
 	if (view->impl->close) {
 		view->impl->close(view);
@@ -689,6 +705,22 @@ static void handle_foreign_activate_request(
 	transaction_commit_dirty();
 }
 
+static void handle_foreign_maximize_request(
+		struct wl_listener *listener, void *data) {
+	struct sway_view *view = wl_container_of(
+			listener, view, foreign_maximize_request);
+	struct wlr_foreign_toplevel_handle_v1_maximized_event *event = data;
+
+	struct sway_container *container = view->container;
+	if (!container->pending.workspace || container_is_floating_or_child(container)) {
+		container = container_toplevel_ancestor(container);
+	}
+
+	container_set_maximized(container, event->maximized);
+	arrange_root();
+	transaction_commit_dirty();
+}
+
 static void handle_foreign_fullscreen_request(
 		struct wl_listener *listener, void *data) {
 	struct sway_view *view = wl_container_of(
@@ -765,6 +797,7 @@ static void handle_foreign_destroy(
 			listener, view, foreign_destroy);
 
 	wl_list_remove(&view->foreign_activate_request.link);
+	wl_list_remove(&view->foreign_maximize_request.link);
 	wl_list_remove(&view->foreign_fullscreen_request.link);
 	wl_list_remove(&view->foreign_close_request.link);
 	if (config->scratchpad_minimize) {
@@ -782,6 +815,10 @@ void view_map(struct sway_view *view, struct wlr_surface *wlr_surface,
 	view->surface = wlr_surface;
 	view_populate_pid(view);
 	view->container = container_create(view);
+	if (config->animation_duration_ms > 0.0f) {
+		add_animation(view->container->animation_state.open_animation);
+		start_animations(&view_map_animation_update);
+	}
 
 	if (view->ctx == NULL) {
 		struct launcher_ctx *ctx = launcher_ctx_find_pid(view->pid);
@@ -847,6 +884,9 @@ void view_map(struct sway_view *view, struct wlr_surface *wlr_surface,
 	view->foreign_activate_request.notify = handle_foreign_activate_request;
 	wl_signal_add(&view->foreign_toplevel->events.request_activate,
 			&view->foreign_activate_request);
+	view->foreign_maximize_request.notify = handle_foreign_maximize_request;
+	wl_signal_add(&view->foreign_toplevel->events.request_maximize,
+			&view->foreign_maximize_request);
 	view->foreign_fullscreen_request.notify = handle_foreign_fullscreen_request;
 	wl_signal_add(&view->foreign_toplevel->events.request_fullscreen,
 			&view->foreign_fullscreen_request);
@@ -864,7 +904,14 @@ void view_map(struct sway_view *view, struct wlr_surface *wlr_surface,
 
 	struct sway_container *container = view->container;
 	if (target_sibling) {
-		container_add_sibling(target_sibling, container, 1);
+		if (ws && ws->layout == L_SCROLL_H) {
+			struct sway_container *column =
+				container_toplevel_ancestor(target_sibling);
+			int index = list_find(ws->tiling, column);
+			workspace_insert_tiling(ws, container, index + 1);
+		} else {
+			container_add_sibling(target_sibling, container, 1);
+		}
 	} else if (ws) {
 		container = workspace_add_tiling(ws, container);
 	}
@@ -1289,4 +1336,3 @@ void view_send_frame_done(struct sway_view *view) {
 		wlr_scene_node_for_each_buffer(node, send_frame_done_iterator, &when);
 	}
 }
-

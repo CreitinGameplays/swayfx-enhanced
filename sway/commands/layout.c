@@ -13,6 +13,9 @@ static enum sway_container_layout parse_layout_string(char *s) {
 		return L_HORIZ;
 	} else if (strcasecmp(s, "splitv") == 0) {
 		return L_VERT;
+	} else if (strcasecmp(s, "scrollable") == 0 ||
+			strcasecmp(s, "scrollh") == 0) {
+		return L_SCROLL_H;
 	} else if (strcasecmp(s, "tabbed") == 0) {
 		return L_TABBED;
 	} else if (strcasecmp(s, "stacking") == 0) {
@@ -22,9 +25,9 @@ static enum sway_container_layout parse_layout_string(char *s) {
 }
 
 static const char expected_syntax[] =
-	"Expected 'layout default|tabbed|stacking|splitv|splith' or "
+	"Expected 'layout default|scrollable|tabbed|stacking|splitv|splith' or "
 	"'layout toggle [split|all]' or "
-	"'layout toggle [split|tabbed|stacking|splitv|splith] [split|tabbed|stacking|splitv|splith]...'";
+	"'layout toggle [split|scrollable|tabbed|stacking|splitv|splith] [split|scrollable|tabbed|stacking|splitv|splith]...'";
 
 static enum sway_container_layout toggle_split_layout(
 		enum sway_container_layout layout,
@@ -61,7 +64,8 @@ static enum sway_container_layout get_layout_toggle(int argc, char **argv,
 		// "layout toggle all"
 		if (strcasecmp(argv[1], "all") == 0) {
 			return layout == L_HORIZ ? L_VERT :
-				layout == L_VERT ? L_STACKED :
+				layout == L_VERT ? L_SCROLL_H :
+				layout == L_SCROLL_H ? L_STACKED :
 				layout == L_STACKED ? L_TABBED : L_HORIZ;
 		}
 		return L_NONE;
@@ -119,12 +123,22 @@ struct cmd_results *cmd_layout(int argc, char **argv) {
 	if ((error = checkarg(argc, "layout", EXPECTED_AT_LEAST, 1))) {
 		return error;
 	}
+	struct sway_container *container = config->handler_context.container;
+	struct sway_workspace *workspace = config->handler_context.workspace;
+	if (config->reading && !container && !workspace && argc == 1) {
+		if (strcasecmp(argv[0], "scrollable") == 0) {
+			config->default_workspace_layout = L_SCROLL_H;
+			return cmd_results_new(CMD_SUCCESS, NULL);
+		}
+		if (strcasecmp(argv[0], "default") == 0) {
+			config->default_workspace_layout = L_NONE;
+			return cmd_results_new(CMD_SUCCESS, NULL);
+		}
+	}
 	if (!root->outputs->length) {
 		return cmd_results_new(CMD_INVALID,
 				"Can't run this command while there's no outputs connected.");
 	}
-	struct sway_container *container = config->handler_context.container;
-	struct sway_workspace *workspace = config->handler_context.workspace;
 
 	if (container && container_is_floating(container)) {
 		return cmd_results_new(CMD_FAILURE,
@@ -134,6 +148,9 @@ struct cmd_results *cmd_layout(int argc, char **argv) {
 	// Operate on parent container, like i3.
 	if (container) {
 		container = container->pending.parent;
+	}
+	if (workspace && workspace->layout == L_SCROLL_H) {
+		container = NULL;
 	}
 
 	// We could be working with a container OR a workspace. These are different
@@ -154,6 +171,10 @@ struct cmd_results *cmd_layout(int argc, char **argv) {
 	}
 	if (new_layout == L_NONE) {
 		return cmd_results_new(CMD_INVALID, "%s", expected_syntax);
+	}
+	if (new_layout == L_SCROLL_H) {
+		old_layout = workspace->layout;
+		container = NULL;
 	}
 	if (new_layout != old_layout) {
 		if (container) {

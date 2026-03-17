@@ -86,9 +86,23 @@ struct sway_workspace *workspace_create(struct sway_output *output,
 	ws->name = strdup(name);
 	ws->prev_split_layout = L_NONE;
 	ws->layout = output_get_default_layout(output);
+	ws->scroll_follow_focus = true;
 	ws->floating = create_list();
 	ws->tiling = create_list();
 	ws->output_priority = create_list();
+	ws->scroll_animation_state.animation = malloc(sizeof(struct animation));
+	if (!ws->scroll_animation_state.animation) {
+		wlr_scene_node_destroy(&ws->layers.tiling->node);
+		wlr_scene_node_destroy(&ws->layers.fullscreen->node);
+		free(ws->name);
+		list_free(ws->floating);
+		list_free(ws->tiling);
+		list_free(ws->output_priority);
+		free(ws);
+		return NULL;
+	}
+	*ws->scroll_animation_state.animation = init_animation();
+	ws->scroll_animation_state.animation->duration_scale = 1.5f;
 
 	ws->gaps_outer = config->gaps_outer;
 	ws->gaps_inner = config->gaps_inner;
@@ -147,6 +161,13 @@ void workspace_destroy(struct sway_workspace *workspace) {
 	scene_node_disown_children(workspace->layers.fullscreen);
 	wlr_scene_node_destroy(&workspace->layers.tiling->node);
 	wlr_scene_node_destroy(&workspace->layers.fullscreen->node);
+	if (workspace->scroll_animation_state.animation) {
+		if (workspace->scroll_animation_state.animation->initialized) {
+			workspace->scroll_animation_state.animation->initialized = false;
+			wl_list_remove(&workspace->scroll_animation_state.animation->link);
+		}
+		free(workspace->scroll_animation_state.animation);
+	}
 
 	free(workspace->name);
 	free(workspace->representation);

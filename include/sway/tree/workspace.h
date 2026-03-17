@@ -3,6 +3,7 @@
 
 #include <scenefx/types/wlr_scene.h>
 #include <stdbool.h>
+#include "sway/animation_manager.h"
 #include "sway/config.h"
 #include "sway/tree/container.h"
 #include "sway/tree/node.h"
@@ -13,6 +14,7 @@ struct sway_workspace_state {
 	struct sway_container *fullscreen;
 	double x, y;
 	int width, height;
+	int scroll_x, target_scroll_x;
 	enum sway_container_layout layout;
 	struct sway_output *output;
 	list_t *floating;
@@ -37,6 +39,8 @@ struct sway_workspace {
 
 	double x, y;
 	int width, height;
+	int scroll_x, target_scroll_x;
+	bool scroll_follow_focus;
 	enum sway_container_layout layout;
 	enum sway_container_layout prev_split_layout;
 
@@ -49,6 +53,14 @@ struct sway_workspace {
 	list_t *tiling;             // struct sway_container
 	list_t *output_priority;
 	bool urgent;
+
+	struct {
+		struct animation *animation;
+		int from_x;
+		int target_x;
+		bool target_x_initialized;
+		bool interactive_resize;
+	} scroll_animation_state;
 
 	struct sway_workspace_state current;
 };

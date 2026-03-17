@@ -93,7 +93,7 @@ The following commands may only be used in the configuration file.
 	It can be disabled by setting the command to a single dash:
 	_swaynag\_command -_
 
-*workspace_layout* default|stacking|tabbed
+*workspace_layout* default|scrollable|stacking|tabbed
 	Specifies the initial layout for new containers in an empty workspace.
 
 *xwayland* enable|disable|force
@@ -179,8 +179,12 @@ set|plus|minus|toggle <amount>
 	This can also be used with criteria to set an idle inhibitor for any
 	existing window or with _for_window_ to set idle inhibitors for future windows.
 
-*layout* default|splith|splitv|stacking|tabbed
+*layout* default|scrollable|splith|splitv|stacking|tabbed
 	Sets the layout mode of the focused container.
+
+	The _scrollable_ layout applies at the workspace level and arranges top-level
+	tiling containers as fixed-width columns on a horizontal strip, keeping the
+	focused column visible with animated horizontal panning.
 
 	When using the _stacking_ layout, only the focused window in the container is
 	displayed, with the opened windows' list on the top of the container.
@@ -194,7 +198,7 @@ set|plus|minus|toggle <amount>
 	and the last split layout. If _split_ is given, then it cycles through
 	splith and splitv. If _all_ is given, then it cycles through every layout.
 
-*layout* toggle [split|tabbed|stacking|splitv|splith] [split|tabbed|stacking|splitv|splith]...
+*layout* toggle [split|scrollable|tabbed|stacking|splitv|splith] [split|scrollable|tabbed|stacking|splitv|splith]...
 	Cycles the layout mode of the focused container through a list of layouts.
 
 *max_render_time* off|<msec>
@@ -220,6 +224,11 @@ set|plus|minus|toggle <amount>
 	This setting only has an effect if a per-output *max_render_time* is in
 	effect on the output the window is currently on. See *sway-output*(5) for
 	further details.
+
+*maximize* [enable|disable|toggle]
+	Makes the focused window fill the current workspace without entering
+	fullscreen mode. If the focused window is tiled, it is temporarily made
+	floating while maximized.
 
 *allow_tearing* yes|no
 	Allows or disallows screen tearing as a result of immediate page flips
@@ -328,6 +337,22 @@ set|plus|minus|toggle <amount>
 	specified in pixels or percentage points. If the units are omitted,
 	floating containers are resized in px and tiled containers by ppt. If
 	_width_ or _height_ is 0, the container will not be resized on that axis.
+
+*scroll* left|right [<px> px]
+	Pans the focused scrollable workspace left or right. If _px_ is omitted,
+	the default amount is 100 pixels.
+
+*scroll* center
+	Centers the focused top-level column in the visible area of the focused
+	scrollable workspace.
+
+*scroll* home|end
+	Moves the focused scrollable workspace camera to the beginning or end of
+	the horizontal strip.
+
+*scroll* follow
+	Restores focus-following camera behavior for the focused scrollable
+	workspace.
 
 *scratchpad* show
 	Shows a window from the scratchpad. Repeatedly using this command will

@@ -299,6 +299,14 @@ static void set_tiled(struct sway_view *view, bool tiled) {
 	wlr_xwayland_surface_set_maximized(surface, tiled, tiled);
 }
 
+static void set_maximized(struct sway_view *view, bool maximized) {
+	if (xwayland_view_from_view(view) == NULL) {
+		return;
+	}
+	struct wlr_xwayland_surface *surface = view->wlr_xwayland_surface;
+	wlr_xwayland_surface_set_maximized(surface, maximized, maximized);
+}
+
 static void set_fullscreen(struct sway_view *view, bool fullscreen) {
 	if (xwayland_view_from_view(view) == NULL) {
 		return;
@@ -405,6 +413,7 @@ static const struct sway_view_impl view_impl = {
 	.configure = configure,
 	.set_activated = set_activated,
 	.set_tiled = set_tiled,
+	.set_maximized = set_maximized,
 	.set_fullscreen = set_fullscreen,
 	.wants_floating = wants_floating,
 	.is_transient_for = is_transient_for,

@@ -199,8 +199,11 @@ output * bg @datadir@/backgrounds/sway/Sway_Wallpaper_Blue_1920x1080.png fill
     bindsym $mod+w layout tabbed
     bindsym $mod+e layout toggle split
 
-    # Make the current focus fullscreen
+    # Make the current focus fullscreen. F11 is provided as a familiar alias.
     bindsym $mod+f fullscreen
+    bindsym F11 fullscreen
+    # Easy maximize shortcut without entering fullscreen mode
+    bindsym $mod+m maximize
 
     # Toggle the current focus between tiling and floating mode
     bindsym $mod+Shift+space floating toggle

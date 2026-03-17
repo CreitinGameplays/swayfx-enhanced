@@ -218,7 +218,7 @@ void output_configure_scene(struct sway_output *output, struct wlr_scene_node *n
 		scene_descriptor_try_get(node, SWAY_SCENE_DESC_CONTAINER);
 	if (con) {
 		closest_con = con;
-		opacity = con->alpha;
+		opacity = container_get_effective_alpha(con);
 		corner_radius = con->corner_radius;
 		blur_enabled = con->blur_enabled;
 		enum sway_container_layout layout = con->current.layout;

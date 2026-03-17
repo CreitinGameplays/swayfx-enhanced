@@ -51,12 +51,14 @@ static void popup_unconstrain(struct sway_xdg_popup *popup) {
 	}
 
 	struct sway_output *output = workspace->output;
+	int lx, ly;
+	wlr_scene_node_coords(&view->content_tree->node, &lx, &ly);
 
 	// the output box expressed in the coordinate system of the toplevel parent
 	// of the popup
 	struct wlr_box output_toplevel_sx_box = {
-		.x = output->lx - view->container->pending.content_x + view->geometry.x,
-		.y = output->ly - view->container->pending.content_y + view->geometry.y,
+		.x = output->lx - lx + view->geometry.x,
+		.y = output->ly - ly + view->geometry.y,
 		.width = output->width,
 		.height = output->height,
 	};
@@ -201,6 +203,13 @@ static void set_tiled(struct sway_view *view, bool tiled) {
 	}
 }
 
+static void set_maximized(struct sway_view *view, bool maximized) {
+	if (xdg_shell_view_from_view(view) == NULL) {
+		return;
+	}
+	wlr_xdg_toplevel_set_maximized(view->wlr_xdg_toplevel, maximized);
+}
+
 static void set_fullscreen(struct sway_view *view, bool fullscreen) {
 	if (xdg_shell_view_from_view(view) == NULL) {
 		return;
@@ -268,6 +277,7 @@ static const struct sway_view_impl view_impl = {
 	.configure = configure,
 	.set_activated = set_activated,
 	.set_tiled = set_tiled,
+	.set_maximized = set_maximized,
 	.set_fullscreen = set_fullscreen,
 	.set_resizing = set_resizing,
 	.wants_floating = wants_floating,
@@ -373,7 +383,17 @@ static void handle_request_maximize(struct wl_listener *listener, void *data) {
 	struct sway_xdg_shell_view *xdg_shell_view =
 		wl_container_of(listener, xdg_shell_view, request_maximize);
 	struct wlr_xdg_toplevel *toplevel = xdg_shell_view->view.wlr_xdg_toplevel;
-	wlr_xdg_surface_schedule_configure(toplevel->base);
+	struct sway_container *container = xdg_shell_view->view.container;
+	if (!container) {
+		wlr_xdg_surface_schedule_configure(toplevel->base);
+		return;
+	}
+	if (!container->pending.workspace || container_is_floating_or_child(container)) {
+		container = container_toplevel_ancestor(container);
+	}
+	container_set_maximized(container, toplevel->requested.maximized);
+	arrange_root();
+	transaction_commit_dirty();
 }
 
 static void handle_request_minimize(struct wl_listener *listener, void *data) {

@@ -412,21 +412,32 @@ static void handle_button(struct sway_seat *seat, uint32_t time_msec,
 	// Handle tiling resize via mod
 	if (cont && !is_floating_or_child && mod_pressed && mod_resize_btn_pressed &&
 			state == WL_POINTER_BUTTON_STATE_PRESSED) {
-		edge = 0;
-		edge |= cursor->cursor->x > cont->pending.x + cont->pending.width / 2 ?
-			WLR_EDGE_RIGHT : WLR_EDGE_LEFT;
-		edge |= cursor->cursor->y > cont->pending.y + cont->pending.height / 2 ?
-			WLR_EDGE_BOTTOM : WLR_EDGE_TOP;
+		struct sway_container *column = container_toplevel_ancestor(cont);
+		bool scrollable_column = column && !column->pending.parent &&
+			column->pending.workspace &&
+			column->pending.workspace->layout == L_SCROLL_H;
+		struct sway_container *resize_target = scrollable_column ? column : cont;
 
-		const char *image = NULL;
-		if (edge == (WLR_EDGE_LEFT | WLR_EDGE_TOP)) {
-			image = "nw-resize";
-		} else if (edge == (WLR_EDGE_TOP | WLR_EDGE_RIGHT)) {
-			image = "ne-resize";
-		} else if (edge == (WLR_EDGE_RIGHT | WLR_EDGE_BOTTOM)) {
-			image = "se-resize";
-		} else if (edge == (WLR_EDGE_BOTTOM | WLR_EDGE_LEFT)) {
-			image = "sw-resize";
+		edge = cursor->cursor->x >
+			resize_target->pending.x + resize_target->pending.width / 2 ?
+			WLR_EDGE_RIGHT : WLR_EDGE_LEFT;
+		if (!scrollable_column) {
+			edge |= cursor->cursor->y >
+				resize_target->pending.y + resize_target->pending.height / 2 ?
+				WLR_EDGE_BOTTOM : WLR_EDGE_TOP;
+		}
+
+		const char *image = scrollable_column ? "col-resize" : NULL;
+		if (!image) {
+			if (edge == (WLR_EDGE_LEFT | WLR_EDGE_TOP)) {
+				image = "nw-resize";
+			} else if (edge == (WLR_EDGE_TOP | WLR_EDGE_RIGHT)) {
+				image = "ne-resize";
+			} else if (edge == (WLR_EDGE_RIGHT | WLR_EDGE_BOTTOM)) {
+				image = "se-resize";
+			} else if (edge == (WLR_EDGE_BOTTOM | WLR_EDGE_LEFT)) {
+				image = "sw-resize";
+			}
 		}
 		cursor_set_image(seat->cursor, image, NULL);
 		seat_set_focus_container(seat, cont);
@@ -490,11 +501,18 @@ static void handle_button(struct sway_seat *seat, uint32_t time_msec,
 	if (config->tiling_drag && (mod_move_btn_pressed || titlebar_left_btn_pressed) &&
 			state == WL_POINTER_BUTTON_STATE_PRESSED && !is_floating_or_child &&
 			cont && cont->pending.fullscreen_mode == FULLSCREEN_NONE) {
+		struct sway_container *move_target = cont;
+		struct sway_container *column = container_toplevel_ancestor(cont);
+		if (column && !column->pending.parent && column->pending.workspace &&
+				column->pending.workspace->layout == L_SCROLL_H) {
+			move_target = column;
+		}
+
 		// If moving a container by its title bar, use a threshold for the drag
 		if (!mod_pressed && config->tiling_drag_threshold > 0) {
-			seatop_begin_move_tiling_threshold(seat, cont);
+			seatop_begin_move_tiling_threshold(seat, move_target);
 		} else {
-			seatop_begin_move_tiling(seat, cont);
+			seatop_begin_move_tiling(seat, move_target);
 		}
 		return;
 	}
@@ -702,6 +720,74 @@ static uint32_t wl_axis_to_button(struct wlr_pointer_axis_event *event) {
 	}
 }
 
+static bool handle_scrollable_workspace_axis(struct sway_seat *seat,
+		uint32_t modifiers, struct wlr_pointer_axis_event *event) {
+	if (!(modifiers & WLR_MODIFIER_SHIFT)) {
+		return false;
+	}
+
+	struct sway_workspace *ws = seat_get_focused_workspace(seat);
+	if (!ws || ws->layout != L_SCROLL_H || ws->tiling->length == 0) {
+		return false;
+	}
+
+	int steps = event->delta_discrete == 0 ? 1 :
+		abs((int)roundf(event->delta_discrete / WLR_POINTER_AXIS_DISCRETE_STEP));
+	if (steps == 0) {
+		return false;
+	}
+
+	int direction = 0;
+	switch (event->orientation) {
+	case WL_POINTER_AXIS_VERTICAL_SCROLL:
+		direction = event->delta < 0 ? -1 : 1;
+		break;
+	case WL_POINTER_AXIS_HORIZONTAL_SCROLL:
+		direction = event->delta < 0 ? -1 : 1;
+		break;
+	default:
+		return false;
+	}
+
+	struct sway_container *focused = seat_get_focused_container(seat);
+	if (!focused || focused->pending.workspace != ws) {
+		focused = seat_get_focus_inactive_tiling(seat, ws);
+		if (!focused) {
+			return false;
+		}
+	}
+
+	struct sway_container *column = container_toplevel_ancestor(focused);
+	int index = list_find(ws->tiling, column);
+	if (index < 0) {
+		return false;
+	}
+
+	if (ws->tiling->length == 1) {
+		return true;
+	}
+
+	int desired = index + direction * steps;
+	desired %= ws->tiling->length;
+	if (desired < 0) {
+		desired += ws->tiling->length;
+	}
+	if (desired == index) {
+		return true;
+	}
+
+	struct sway_container *target_column = ws->tiling->items[desired];
+	struct sway_container *target =
+		seat_get_focus_inactive_view(seat, &target_column->node);
+	if (!target) {
+		target = target_column;
+	}
+
+	seat_set_focus_container(seat, target);
+	transaction_commit_dirty();
+	return true;
+}
+
 static void handle_pointer_axis(struct sway_seat *seat,
 		struct wlr_pointer_axis_event *event) {
 	struct sway_input_device *input_device =
@@ -747,6 +833,10 @@ static void handle_pointer_axis(struct sway_seat *seat,
 	if (binding) {
 		seat_execute_command(seat, binding);
 		handled = true;
+	}
+
+	if (!handled) {
+		handled = handle_scrollable_workspace_axis(seat, modifiers, event);
 	}
 
 	// Scrolling on a tabbed or stacked title bar (handled as press event)

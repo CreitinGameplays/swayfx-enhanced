@@ -10,6 +10,7 @@ struct animation {
 	struct wl_list link;
 	float progress;
 	float multiplier;
+	float duration_scale;
 	bool initialized;
 };
 

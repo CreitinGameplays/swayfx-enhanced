@@ -436,6 +436,9 @@ struct sway_output_non_desktop *output_non_desktop_create(
 
 enum sway_container_layout output_get_default_layout(
 		struct sway_output *output) {
+	if (config->default_workspace_layout != L_NONE) {
+		return config->default_workspace_layout;
+	}
 	if (config->default_orientation != L_NONE) {
 		return config->default_orientation;
 	}

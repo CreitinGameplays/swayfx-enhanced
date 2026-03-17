@@ -7,6 +7,7 @@
 #include "sway/tree/arrange.h"
 #include "sway/tree/container.h"
 #include "sway/tree/view.h"
+#include "sway/tree/workspace.h"
 
 struct seatop_resize_tiling_event {
 	struct sway_container *con;    // leaf container
@@ -24,6 +25,7 @@ struct seatop_resize_tiling_event {
 	double ref_lx, ref_ly;         // cursor's x/y at start of op
 	double h_con_orig_width;       // width of the horizontal ancestor at start
 	double v_con_orig_height;      // height of the vertical ancestor at start
+	bool h_con_is_scrollable_column;
 };
 
 static struct sway_container *container_get_resize_sibling(
@@ -35,12 +37,28 @@ static struct sway_container *container_get_resize_sibling(
 	list_t *siblings = container_get_siblings(con);
 	int index = container_sibling_index(con);
 	int offset = edge & (WLR_EDGE_TOP | WLR_EDGE_LEFT) ? -1 : 1;
+	int sibling_index = index + offset;
 
 	if (siblings->length == 1) {
 		return NULL;
-	} else {
-		return siblings->items[index + offset];
 	}
+
+	if (sibling_index < 0 || sibling_index >= siblings->length) {
+		return NULL;
+	}
+
+	return siblings->items[sibling_index];
+}
+
+static void update_scrollable_resize_state(
+		struct seatop_resize_tiling_event *e, bool resizing) {
+	if (!e->h_con_is_scrollable_column || !e->h_con ||
+			!e->h_con->pending.workspace) {
+		return;
+	}
+
+	e->h_con->pending.workspace->scroll_animation_state.interactive_resize =
+		resizing;
 }
 
 static void handle_button(struct sway_seat *seat, uint32_t time_msec,
@@ -49,12 +67,13 @@ static void handle_button(struct sway_seat *seat, uint32_t time_msec,
 	struct seatop_resize_tiling_event *e = seat->seatop_data;
 
 	if (seat->cursor->pressed_button_count == 0) {
+		update_scrollable_resize_state(e, false);
 		if (e->h_con) {
 			container_set_resizing(e->h_con, false);
 			container_set_resizing(e->h_sib, false);
 			if (e->h_con->pending.parent) {
 				arrange_container(e->h_con->pending.parent);
-			} else {
+			} else if (e->h_con->pending.workspace) {
 				arrange_workspace(e->h_con->pending.workspace);
 			}
 		}
@@ -63,7 +82,7 @@ static void handle_button(struct sway_seat *seat, uint32_t time_msec,
 			container_set_resizing(e->v_sib, false);
 			if (e->v_con->pending.parent) {
 				arrange_container(e->v_con->pending.parent);
-			} else {
+			} else if (e->v_con->pending.workspace) {
 				arrange_workspace(e->v_con->pending.workspace);
 			}
 		}
@@ -80,9 +99,9 @@ static void handle_pointer_motion(struct sway_seat *seat, uint32_t time_msec) {
 	int moved_y = seat->cursor->cursor->y - e->ref_ly;
 
 	if (e->h_con) {
-		if (e->edge & WLR_EDGE_LEFT) {
+		if (e->edge_x == WLR_EDGE_LEFT) {
 			amount_x = (e->h_con_orig_width - moved_x) - e->h_con->pending.width;
-		} else if (e->edge & WLR_EDGE_RIGHT) {
+		} else if (e->edge_x == WLR_EDGE_RIGHT) {
 			amount_x = (e->h_con_orig_width + moved_x) - e->h_con->pending.width;
 		}
 	}
@@ -103,12 +122,16 @@ static void handle_pointer_motion(struct sway_seat *seat, uint32_t time_msec) {
 	transaction_commit_dirty();
 }
 
+static bool event_tracks_container(struct seatop_resize_tiling_event *e,
+		struct sway_container *con) {
+	return e->con == con || e->h_con == con || e->v_con == con ||
+		e->h_sib == con || e->v_sib == con;
+}
+
 static void handle_unref(struct sway_seat *seat, struct sway_container *con) {
 	struct seatop_resize_tiling_event *e = seat->seatop_data;
-	if (e->con == con) {
-		seatop_begin_default(seat);
-	}
-	if (e->h_sib == con || e->v_sib == con) {
+	if (event_tracks_container(e, con)) {
+		update_scrollable_resize_state(e, false);
 		seatop_begin_default(seat);
 	}
 }
@@ -137,9 +160,13 @@ void seatop_begin_resize_tiling(struct sway_seat *seat,
 	if (edge & (WLR_EDGE_LEFT | WLR_EDGE_RIGHT)) {
 		e->edge_x = edge & (WLR_EDGE_LEFT | WLR_EDGE_RIGHT);
 		e->h_con = container_find_resize_parent(e->con, e->edge_x);
-		e->h_sib = container_get_resize_sibling(e->h_con, e->edge_x);
 
 		if (e->h_con) {
+			e->h_con_is_scrollable_column = !e->h_con->pending.parent &&
+				e->h_con->pending.workspace &&
+				e->h_con->pending.workspace->layout == L_SCROLL_H;
+			e->h_sib = container_get_resize_sibling(e->h_con, e->edge_x);
+			update_scrollable_resize_state(e, true);
 			container_set_resizing(e->h_con, true);
 			container_set_resizing(e->h_sib, true);
 			e->h_con_orig_width = e->h_con->pending.width;
