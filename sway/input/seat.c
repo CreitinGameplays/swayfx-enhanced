@@ -163,7 +163,12 @@ static void seat_keyboard_notify_enter(struct sway_seat *seat,
 
 	struct sway_keyboard *sway_keyboard =
 		sway_keyboard_for_wlr_keyboard(seat, keyboard);
-	assert(sway_keyboard && "Cannot find sway_keyboard for seat keyboard");
+	if (!sway_keyboard) {
+		sway_log(SWAY_ERROR, "Cannot find sway_keyboard for seat keyboard");
+		wlr_seat_keyboard_notify_enter(seat->wlr_seat, surface, NULL, 0,
+			&keyboard->modifiers);
+		return;
+	}
 
 	struct sway_shortcut_state *state = &sway_keyboard->state_pressed_sent;
 	wlr_seat_keyboard_notify_enter(seat->wlr_seat, surface,
@@ -317,10 +322,13 @@ static void handle_seat_node_destroy(struct wl_listener *listener, void *data) {
 		// Setting focus_inactive
 		focus = seat_get_focus_inactive(seat, &root->node);
 		seat_set_raw_focus(seat, next_focus);
-		if (focus->type == N_CONTAINER && focus->sway_container->pending.workspace) {
+		if (focus && focus->type == N_CONTAINER &&
+				focus->sway_container->pending.workspace) {
 			seat_set_raw_focus(seat, &focus->sway_container->pending.workspace->node);
 		}
-		seat_set_raw_focus(seat, focus);
+		if (focus) {
+			seat_set_raw_focus(seat, focus);
+		}
 	}
 }
 
@@ -1079,6 +1087,9 @@ static void send_unfocus(struct sway_container *con, void *data) {
 static void seat_send_unfocus(struct sway_node *node, struct sway_seat *seat) {
 	sway_cursor_constrain(seat->cursor, NULL);
 	wlr_seat_keyboard_notify_clear_focus(seat->wlr_seat);
+	if (!node) {
+		return;
+	}
 	if (node->type == N_WORKSPACE) {
 		workspace_for_each_container(node->sway_workspace, send_unfocus, seat);
 	} else {
@@ -1113,7 +1124,14 @@ static void set_workspace(struct sway_seat *seat,
 }
 
 void seat_set_raw_focus(struct sway_seat *seat, struct sway_node *node) {
+	if (!node) {
+		return;
+	}
 	struct sway_seat_node *seat_node = seat_node_from_node(seat, node);
+	if (!seat_node) {
+		sway_log(SWAY_ERROR, "Unable to set focus for node with no seat node");
+		return;
+	}
 	wl_list_remove(&seat_node->link);
 	wl_list_insert(&seat->focus_stack, &seat_node->link);
 	node_set_dirty(node);
@@ -1310,17 +1328,29 @@ void seat_set_focus_layer(struct sway_seat *seat,
 		struct wlr_layer_surface_v1 *layer) {
 	if (!layer && seat->focused_layer) {
 		seat->focused_layer = NULL;
+		seat->has_exclusive_layer = false;
 		struct sway_node *previous = seat_get_focus_inactive(seat, &root->node);
 		if (previous) {
 			// Hack to get seat to re-focus the return value of get_focus
 			seat_set_focus(seat, NULL);
 			seat_set_focus(seat, previous);
+		} else {
+			seat_set_focus_surface(seat, NULL, false);
 		}
 		return;
 	} else if (!layer) {
+		seat->has_exclusive_layer = false;
 		return;
 	}
-	assert(layer->surface->mapped);
+	if (!layer->surface || !layer->surface->mapped) {
+		sway_log(SWAY_DEBUG, "Refusing to focus an unmapped layer surface");
+		if (seat->focused_layer == layer) {
+			seat->focused_layer = NULL;
+			seat_set_focus_surface(seat, NULL, false);
+		}
+		seat->has_exclusive_layer = false;
+		return;
+	}
 	if (layer->current.layer >= ZWLR_LAYER_SHELL_V1_LAYER_TOP &&
 			layer->current.keyboard_interactive
 			== ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE) {
@@ -1440,8 +1470,11 @@ struct sway_node *seat_get_focus(struct sway_seat *seat) {
 	if (!seat->has_focus) {
 		return NULL;
 	}
-	sway_assert(!wl_list_empty(&seat->focus_stack),
-			"focus_stack is empty, but has_focus is true");
+	if (wl_list_empty(&seat->focus_stack)) {
+		sway_log(SWAY_ERROR, "focus_stack is empty, but has_focus is true");
+		seat->has_focus = false;
+		return NULL;
+	}
 	struct sway_seat_node *current =
 		wl_container_of(seat->focus_stack.next, current, link);
 	return current->node;

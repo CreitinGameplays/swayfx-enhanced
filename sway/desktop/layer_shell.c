@@ -387,6 +387,9 @@ static void handle_node_destroy(struct wl_listener *listener, void *data) {
 static void handle_surface_commit(struct wl_listener *listener, void *data) {
 	struct sway_layer_surface *surface =
 		wl_container_of(listener, surface, surface_commit);
+	if (!surface->output) {
+		return;
+	}
 
 	struct wlr_layer_surface_v1 *layer_surface = surface->layer_surface;
 
@@ -418,6 +421,9 @@ static void handle_surface_commit(struct wl_listener *listener, void *data) {
 static void handle_map(struct wl_listener *listener, void *data) {
 	struct sway_layer_surface *surface = wl_container_of(listener,
 			surface, map);
+	if (!surface->output) {
+		return;
+	}
 
 	struct wlr_layer_surface_v1 *layer_surface =
 				surface->scene->layer_surface;
@@ -453,6 +459,10 @@ static void handle_unmap(struct wl_listener *listener, void *data) {
 		if (seat->focused_layer == surface->layer_surface) {
 			seat_set_focus_layer(seat, NULL);
 		}
+	}
+	if (surface->output) {
+		arrange_layers(surface->output);
+		transaction_commit_dirty();
 	}
 
 	cursor_rebase_all();

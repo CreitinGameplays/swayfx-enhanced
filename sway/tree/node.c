@@ -37,7 +37,7 @@ void node_set_dirty(struct sway_node *node) {
 }
 
 bool node_is_view(struct sway_node *node) {
-	return node->type == N_CONTAINER && node->sway_container->view;
+	return node && node->type == N_CONTAINER && node->sway_container->view;
 }
 
 char *node_get_name(struct sway_node *node) {
@@ -239,4 +239,3 @@ struct wlr_scene_liquid_glass *alloc_scene_liquid_glass(struct wlr_scene_tree *p
 
 	return glass;
 }
-
