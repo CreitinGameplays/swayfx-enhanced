@@ -602,6 +602,23 @@ void container_destroy(struct sway_container *con) {
 		}
 	}
 
+	if (con->animation_state.animation) {
+		if (con->animation_state.animation->initialized) {
+			con->animation_state.animation->initialized = false;
+			wl_list_remove(&con->animation_state.animation->link);
+		}
+		free(con->animation_state.animation);
+		con->animation_state.animation = NULL;
+	}
+	if (con->animation_state.open_animation) {
+		if (con->animation_state.open_animation->initialized) {
+			con->animation_state.open_animation->initialized = false;
+			wl_list_remove(&con->animation_state.open_animation->link);
+		}
+		free(con->animation_state.open_animation);
+		con->animation_state.open_animation = NULL;
+	}
+
 	scene_node_disown_children(con->content_tree);
 	wlr_scene_node_destroy(&con->scene_tree->node);
 	free(con);
@@ -644,16 +661,6 @@ void container_begin_destroy(struct sway_container *con) {
 		wl_list_remove(&con->output_leave.link);
 		wl_list_remove(&con->output_handler_destroy.link);
 	}
-	if (con->animation_state.animation->initialized) {
-		con->animation_state.animation->initialized = false;
-		wl_list_remove(&con->animation_state.animation->link);
-	}
-	free(con->animation_state.animation);
-	if (con->animation_state.open_animation->initialized) {
-		con->animation_state.open_animation->initialized = false;
-		wl_list_remove(&con->animation_state.open_animation->link);
-	}
-	free(con->animation_state.open_animation);
 }
 
 void container_reap_empty(struct sway_container *con) {

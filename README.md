@@ -163,6 +163,29 @@ ninja -C build/
 sudo ninja -C build/ install
 ```
 
+### ASan Debugging
+
+When chasing compositor crashes or memory corruption, build a separate AddressSanitizer binary so the normal `build/` tree stays untouched:
+
+```bash
+meson setup build-asan -Db_sanitize=address -Dbuildtype=debug -Doptimization=0
+ninja -C build-asan sway/sway
+```
+
+Run the instrumented compositor and save its debug output:
+
+```bash
+ASAN_OPTIONS=halt_on_error=1:abort_on_error=1:detect_leaks=0 \
+./build-asan/sway/sway -d 2> /tmp/swayfx-asan.log
+```
+
+After reproducing the crash, inspect the log for the allocator report and stack trace:
+
+```bash
+rg -n "AddressSanitizer|ERROR:|SUMMARY:" /tmp/swayfx-asan.log
+tail -n 200 /tmp/swayfx-asan.log
+```
+
 ## Acknowledgements
 
 SwayFX is a community project built on the shoulders of giants. We thank:

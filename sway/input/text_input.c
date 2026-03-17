@@ -315,7 +315,10 @@ static void handle_pending_focused_surface_destroy(struct wl_listener *listener,
 	struct sway_text_input *text_input = wl_container_of(listener, text_input,
 		pending_focused_surface_destroy);
 	struct wlr_surface *surface = data;
-	assert(text_input->pending_focused_surface == surface);
+	if (text_input->pending_focused_surface != surface) {
+		sway_log(SWAY_ERROR,
+			"Text input pending focus surface destroy was out of sync");
+	}
 	text_input->pending_focused_surface = NULL;
 	wl_list_remove(&text_input->pending_focused_surface_destroy.link);
 	wl_list_init(&text_input->pending_focused_surface_destroy.link);
@@ -656,13 +659,18 @@ void sway_input_method_relay_set_focus(struct sway_input_method_relay *relay,
 		struct wlr_surface *surface) {
 	struct sway_text_input *text_input;
 	wl_list_for_each(text_input, &relay->text_inputs, link) {
+		if (text_input->pending_focused_surface &&
+				text_input->input->focused_surface) {
+			sway_log(SWAY_ERROR,
+				"Text input focus state was inconsistent, clearing pending focus");
+			text_input_set_pending_focused_surface(text_input, NULL);
+		}
+
 		if (text_input->pending_focused_surface) {
-			assert(text_input->input->focused_surface == NULL);
 			if (surface != text_input->pending_focused_surface) {
 				text_input_set_pending_focused_surface(text_input, NULL);
 			}
 		} else if (text_input->input->focused_surface) {
-			assert(text_input->pending_focused_surface == NULL);
 			if (surface != text_input->input->focused_surface) {
 				relay_disable_text_input(relay, text_input);
 				wlr_text_input_v3_send_leave(text_input->input);
