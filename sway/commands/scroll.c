@@ -70,12 +70,8 @@ static int clamp_scroll_offset(struct sway_workspace *ws, int offset) {
 }
 
 static struct sway_container *get_scroll_focus(struct sway_workspace *ws) {
-	struct sway_seat *seat = get_command_seat();
-	struct sway_container *focus = seat ?
-		seat_get_focus_inactive_tiling(seat, ws) : NULL;
-	if (!focus && ws->tiling->length > 0) {
-		focus = ws->tiling->items[0];
-	}
+	struct sway_container *focus =
+		workspace_get_focus_tiling_child(ws, get_command_seat());
 	if (!focus) {
 		return NULL;
 	}

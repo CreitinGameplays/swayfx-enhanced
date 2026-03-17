@@ -706,6 +706,33 @@ void workspace_detect_urgent(struct sway_workspace *workspace) {
 	}
 }
 
+struct sway_container *workspace_get_focus_tiling_child(
+		struct sway_workspace *ws, struct sway_seat *seat) {
+	if (!ws) {
+		return NULL;
+	}
+	if (!seat) {
+		seat = input_manager_current_seat();
+	}
+
+	struct sway_container *focus = seat ?
+		seat_get_focus_inactive_tiling(seat, ws) : NULL;
+	if (focus) {
+		while (focus->pending.parent) {
+			focus = focus->pending.parent;
+		}
+		if (focus->pending.workspace != ws ||
+				list_find(ws->tiling, focus) == -1) {
+			focus = NULL;
+		}
+	}
+
+	if (!focus && ws->tiling->length > 0) {
+		focus = ws->tiling->items[0];
+	}
+	return focus;
+}
+
 void workspace_for_each_container(struct sway_workspace *ws,
 		void (*f)(struct sway_container *con, void *data), void *data) {
 	// Tiling
@@ -870,7 +897,7 @@ struct sway_container *workspace_insert_tiling(struct sway_workspace *workspace,
 bool workspace_has_single_visible_container(struct sway_workspace *ws) {
 	struct sway_seat *seat = input_manager_get_default_seat();
 	struct sway_container *focus =
-		seat_get_focus_inactive_tiling(seat, ws);
+		workspace_get_focus_tiling_child(ws, seat);
 	if (focus && !focus->view) {
 		focus = seat_get_focus_inactive_view(seat, &focus->node);
 	}

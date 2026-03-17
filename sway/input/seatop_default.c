@@ -751,7 +751,7 @@ static bool handle_scrollable_workspace_axis(struct sway_seat *seat,
 
 	struct sway_container *focused = seat_get_focused_container(seat);
 	if (!focused || focused->pending.workspace != ws) {
-		focused = seat_get_focus_inactive_tiling(seat, ws);
+		focused = workspace_get_focus_tiling_child(ws, seat);
 		if (!focused) {
 			return false;
 		}

@@ -18,17 +18,8 @@ static const double SCROLL_DEFAULT_WIDTH_FRACTION = 0.55;
 
 static struct sway_container *workspace_get_pending_scroll_focus(
 		struct sway_workspace *workspace) {
-	struct sway_seat *seat = input_manager_current_seat();
-	struct sway_container *focus = seat ?
-		seat_get_focus_inactive_tiling(seat, workspace) : NULL;
-	if (focus) {
-		while (focus->pending.parent) {
-			focus = focus->pending.parent;
-		}
-	} else if (workspace->tiling->length > 0) {
-		focus = workspace->tiling->items[0];
-	}
-	return focus;
+	return workspace_get_focus_tiling_child(workspace,
+		input_manager_current_seat());
 }
 
 static int get_pending_scroll_layout_content_width(list_t *children, int gaps) {

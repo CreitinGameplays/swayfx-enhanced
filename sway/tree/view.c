@@ -856,7 +856,7 @@ void view_map(struct sway_view *view, struct wlr_surface *wlr_surface,
 			// If we're about to launch the view into the floating container, then
 			// launch it as a tiled view instead.
 			if (ws) {
-				target_sibling = seat_get_focus_inactive_tiling(seat, ws);
+				target_sibling = workspace_get_focus_tiling_child(ws, seat);
 				if (target_sibling) {
 					struct sway_container *con =
 						seat_get_focus_inactive_view(seat, &target_sibling->node);

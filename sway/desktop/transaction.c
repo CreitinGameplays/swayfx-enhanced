@@ -147,13 +147,8 @@ static void copy_workspace_state(struct sway_workspace *ws,
 	state->focused = seat_get_focus(seat) == &ws->node;
 
 	// Set focused_inactive_child to the direct tiling child
-	struct sway_container *focus = seat_get_focus_inactive_tiling(seat, ws);
-	if (focus) {
-		while (focus->pending.parent) {
-			focus = focus->pending.parent;
-		}
-	}
-	state->focused_inactive_child = focus;
+	state->focused_inactive_child =
+		workspace_get_focus_tiling_child(ws, seat);
 }
 
 static void copy_container_state(struct sway_container *container,
