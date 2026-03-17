@@ -33,7 +33,7 @@ Control the duration of window movement and resizing animations.
 New windows also fade in by default using the same animation timing.
 
 Default config convenience:
-- `Mod+m`: Maximize the focused window to the current workspace without entering fullscreen.
+- `Mod+m maximize`: Maximize the focused window to the current workspace without entering fullscreen.
 
 ### Scrollable Tiling
 Enable a niri-style horizontal strip layout for top-level tiled windows.
