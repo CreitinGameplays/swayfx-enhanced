@@ -244,30 +244,39 @@ static void handle_tablet_tool_tip(struct sway_seat *seat,
 		seat_set_focus_layer(seat, layer);
 		transaction_commit_dirty();
 	} else if (cont) {
-		bool is_floating_or_child = container_is_floating_or_child(cont);
-		bool is_fullscreen_or_child = container_is_fullscreen_or_child(cont);
-		struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat->wlr_seat);
-		bool mod_pressed = keyboard &&
-			(wlr_keyboard_get_modifiers(keyboard) & config->floating_mod);
-
-		// Handle beginning floating move
-		if (is_floating_or_child && !is_fullscreen_or_child && mod_pressed) {
+		struct sway_container *obstructing =
+			container_obstructing_fullscreen_container(cont);
+		if (obstructing) {
 			seat_set_focus_container(seat,
-				seat_get_focus_inactive_view(seat, &cont->node));
-			seatop_begin_move_floating(seat, container_toplevel_ancestor(cont));
+				container_toplevel_ancestor(obstructing));
+			transaction_commit_dirty();
 			return;
-		}
+		} else {
+			bool is_floating_or_child = container_is_floating_or_child(cont);
+			bool is_fullscreen_or_child = container_is_fullscreen_or_child(cont);
+			struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat->wlr_seat);
+			bool mod_pressed = keyboard &&
+				(wlr_keyboard_get_modifiers(keyboard) & config->floating_mod);
 
-		// Handle moving a tiling container
-		if (config->tiling_drag && mod_pressed && !is_floating_or_child &&
-				cont->pending.fullscreen_mode == FULLSCREEN_NONE) {
-			seatop_begin_move_tiling(seat, cont);
-			return;
-		}
+			// Handle beginning floating move
+			if (is_floating_or_child && !is_fullscreen_or_child && mod_pressed) {
+				seat_set_focus_container(seat,
+					seat_get_focus_inactive_view(seat, &cont->node));
+				seatop_begin_move_floating(seat, container_toplevel_ancestor(cont));
+				return;
+			}
 
-		// Handle tapping on a container surface
-		seat_set_focus_container(seat, cont);
-		seatop_begin_down(seat, node->sway_container, sx, sy);
+			// Handle moving a tiling container
+			if (config->tiling_drag && mod_pressed && !is_floating_or_child &&
+					cont->pending.fullscreen_mode == FULLSCREEN_NONE) {
+				seatop_begin_move_tiling(seat, cont);
+				return;
+			}
+
+			// Handle tapping on a container surface
+			seat_set_focus_container(seat, cont);
+			seatop_begin_down(seat, node->sway_container, sx, sy);
+		}
 	}
 #if WLR_HAS_XWAYLAND
 	// Handle tapping on an xwayland unmanaged view
@@ -361,6 +370,17 @@ static void handle_button(struct sway_seat *seat, uint32_t time_msec,
 	bool mod_move_btn_pressed = mod_pressed && button == mod_move_btn;
 	bool mod_resize_btn_pressed = mod_pressed && button == mod_resize_btn;
 	bool titlebar_left_btn_pressed = on_titlebar && button == BTN_LEFT;
+	struct sway_container *obstructing =
+		cont ? container_obstructing_fullscreen_container(cont) : NULL;
+
+	if (obstructing) {
+		if (state == WL_POINTER_BUTTON_STATE_PRESSED) {
+			seat_set_focus_container(seat,
+				container_toplevel_ancestor(obstructing));
+			transaction_commit_dirty();
+		}
+		return;
+	}
 
 	// Handle mouse bindings
 	if (trigger_pointer_button_binding(seat, device, button, state, modifiers,

@@ -725,23 +725,40 @@ void container_for_each_child(struct sway_container *container,
 	}
 }
 
-struct sway_container *container_obstructing_fullscreen_container(struct sway_container *container)
-{
-	struct sway_workspace *workspace = container->pending.workspace;
+struct sway_container *container_obstructing_fullscreen_container(
+		struct sway_container *container) {
+	struct sway_container *toplevel = container_toplevel_ancestor(container);
+	struct sway_workspace *workspace = toplevel->pending.workspace;
 
-	if (workspace && workspace->fullscreen && !container_is_fullscreen_or_child(container)) {
-		if (container_is_transient_for(container, workspace->fullscreen)) {
+	if (workspace && workspace->fullscreen &&
+			!container_is_fullscreen_or_child(toplevel)) {
+		if (container_is_transient_for(toplevel, workspace->fullscreen)) {
 			return NULL;
 		}
 		return workspace->fullscreen;
 	}
 
 	struct sway_container *fullscreen_global = root->fullscreen_global;
-	if (fullscreen_global && container != fullscreen_global && !container_has_ancestor(container, fullscreen_global)) {
-		if (container_is_transient_for(container, fullscreen_global)) {
+	if (fullscreen_global && toplevel != fullscreen_global &&
+			!container_has_ancestor(toplevel, fullscreen_global)) {
+		if (container_is_transient_for(toplevel, fullscreen_global)) {
 			return NULL;
 		}
 		return fullscreen_global;
+	}
+
+	if (workspace) {
+		for (int i = workspace->floating->length - 1; i >= 0; --i) {
+			struct sway_container *floater = workspace->floating->items[i];
+			if (!container_is_maximized(floater) || floater == toplevel ||
+					container_has_ancestor(toplevel, floater)) {
+				continue;
+			}
+			if (container_is_transient_for(toplevel, floater)) {
+				return NULL;
+			}
+			return floater;
+		}
 	}
 
 	return NULL;
