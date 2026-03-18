@@ -42,7 +42,7 @@ struct sway_transaction_instruction {
 };
 
 static list_t *closing_containers;
-static const float close_animation_duration_scale = 0.8f;
+static const float close_animation_duration_scale = 1.0f;
 
 static void animation_update_callback(void);
 static bool container_start_close_animation(struct sway_container *con);
@@ -477,7 +477,7 @@ static void arrange_container(struct sway_container *con,
 				y -= (target_height - con->animation_state.current_height) / 2;
 			}
 			float open_scale = con->animation_state.close_running ?
-				get_animated_value(1.0f, 0.88f,
+				get_animated_value(1.0f, 0.75f,
 					*con->animation_state.open_animation) :
 				get_animated_value(0.88f, 1.0f,
 					*con->animation_state.open_animation);

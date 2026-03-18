@@ -266,7 +266,7 @@ float container_get_effective_alpha(struct sway_container *con) {
 	if (con->animation_state.close_running &&
 			con->animation_state.open_animation) {
 		float fade_progress =
-			con->animation_state.open_animation->multiplier / 0.7f;
+			con->animation_state.open_animation->multiplier;
 		alpha *= 1.0f - MIN(fade_progress, 1.0f);
 	}
 
