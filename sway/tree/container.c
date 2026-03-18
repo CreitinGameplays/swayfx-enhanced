@@ -755,20 +755,6 @@ struct sway_container *container_obstructing_fullscreen_container(
 		return fullscreen_global;
 	}
 
-	if (workspace) {
-		for (int i = workspace->floating->length - 1; i >= 0; --i) {
-			struct sway_container *floater = workspace->floating->items[i];
-			if (!container_is_maximized(floater) || floater == toplevel ||
-					container_has_ancestor(toplevel, floater)) {
-				continue;
-			}
-			if (container_is_transient_for(toplevel, floater)) {
-				return NULL;
-			}
-			return floater;
-		}
-	}
-
 	return NULL;
 }
 
