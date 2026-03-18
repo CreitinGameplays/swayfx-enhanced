@@ -110,17 +110,7 @@ static enum wlr_edges find_edge(struct sway_container *cont,
 enum wlr_edges find_resize_edge(struct sway_container *cont,
 		struct wlr_surface *surface, struct sway_cursor *cursor) {
 	enum wlr_edges edge = find_edge(cont, surface, cursor);
-	if (!edge || container_is_floating(cont)) {
-		return edge;
-	}
-
-	struct sway_container *column = container_toplevel_ancestor(cont);
-	if (column && !column->pending.parent && column->pending.workspace &&
-			column->pending.workspace->layout == L_SCROLL_H) {
-		return edge & (WLR_EDGE_LEFT | WLR_EDGE_RIGHT);
-	}
-
-	if (edge_is_external(cont, edge)) {
+	if (edge && !container_is_floating(cont) && edge_is_external(cont, edge)) {
 		return WLR_EDGE_NONE;
 	}
 	return edge;
