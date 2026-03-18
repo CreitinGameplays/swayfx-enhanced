@@ -99,7 +99,10 @@ static void handle_pointer_motion(struct sway_seat *seat, uint32_t time_msec) {
 	int moved_y = seat->cursor->cursor->y - e->ref_ly;
 
 	if (e->h_con) {
-		if (e->edge_x == WLR_EDGE_LEFT) {
+		if (e->h_con_is_scrollable_column) {
+			amount_x = (e->h_con_orig_width + moved_x) -
+				e->h_con->pending.width;
+		} else if (e->edge_x == WLR_EDGE_LEFT) {
 			amount_x = (e->h_con_orig_width - moved_x) - e->h_con->pending.width;
 		} else if (e->edge_x == WLR_EDGE_RIGHT) {
 			amount_x = (e->h_con_orig_width + moved_x) - e->h_con->pending.width;
@@ -165,7 +168,9 @@ void seatop_begin_resize_tiling(struct sway_seat *seat,
 			e->h_con_is_scrollable_column = !e->h_con->pending.parent &&
 				e->h_con->pending.workspace &&
 				e->h_con->pending.workspace->layout == L_SCROLL_H;
-			e->h_sib = container_get_resize_sibling(e->h_con, e->edge_x);
+			if (!e->h_con_is_scrollable_column) {
+				e->h_sib = container_get_resize_sibling(e->h_con, e->edge_x);
+			}
 			update_scrollable_resize_state(e, true);
 			container_set_resizing(e->h_con, true);
 			container_set_resizing(e->h_sib, true);

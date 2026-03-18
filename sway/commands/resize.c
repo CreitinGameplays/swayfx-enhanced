@@ -60,27 +60,6 @@ static struct sway_container *container_find_scrollable_resize_parent(
 	return column;
 }
 
-static struct sway_container *container_get_resize_sibling(
-		struct sway_container *con, uint32_t edge) {
-	if (!con) {
-		return NULL;
-	}
-
-	list_t *siblings = container_get_siblings(con);
-	int index = container_sibling_index(con);
-	int offset = edge & (WLR_EDGE_TOP | WLR_EDGE_LEFT) ? -1 : 1;
-	int sibling_index = index + offset;
-
-	if (siblings->length == 1) {
-		return NULL;
-	}
-	if (sibling_index < 0 || sibling_index >= siblings->length) {
-		return NULL;
-	}
-
-	return siblings->items[sibling_index];
-}
-
 struct sway_container *container_find_resize_parent(struct sway_container *con,
 		uint32_t axis) {
 	struct sway_container *scroll_parent =
@@ -132,28 +111,10 @@ void container_resize_tiled(struct sway_container *con,
 			return;
 		}
 
-		struct sway_container *sibling = NULL;
-		if (axis == WLR_EDGE_LEFT || axis == WLR_EDGE_RIGHT) {
-			sibling = container_get_resize_sibling(con, axis);
-		}
-
 		int width = con->pending.width + amount;
-		if (sibling) {
-			int min_amount = MIN_SANE_W - con->pending.width;
-			int max_amount = workspace_width - con->pending.width;
-			min_amount = MAX(min_amount, sibling->pending.width - workspace_width);
-			max_amount = MIN(max_amount, sibling->pending.width - MIN_SANE_W);
-			amount = MAX(min_amount, MIN(amount, max_amount));
-
-			width = con->pending.width + amount;
-			int sibling_width = sibling->pending.width - amount;
-			con->width_fraction = (double)width / workspace_width;
-			sibling->width_fraction = (double)sibling_width / workspace_width;
-		} else {
-			width = fmax(width, MIN_SANE_W);
-			width = fmin(width, workspace_width);
-			con->width_fraction = (double)width / workspace_width;
-		}
+		width = fmax(width, MIN_SANE_W);
+		width = fmin(width, workspace_width);
+		con->width_fraction = (double)width / workspace_width;
 
 		arrange_workspace(ws);
 		return;
