@@ -25,6 +25,7 @@ struct seatop_resize_tiling_event {
 	double ref_lx, ref_ly;         // cursor's x/y at start of op
 	double h_con_orig_width;       // width of the horizontal ancestor at start
 	double v_con_orig_height;      // height of the vertical ancestor at start
+	int h_con_orig_scroll_x;       // workspace scroll offset at start
 	bool h_con_is_scrollable_column;
 };
 
@@ -48,6 +49,73 @@ static struct sway_container *container_get_resize_sibling(
 	}
 
 	return siblings->items[sibling_index];
+}
+
+static int get_scrollable_content_width(struct sway_workspace *ws) {
+	if (!ws) {
+		return 0;
+	}
+
+	int content_width = 0;
+	for (int i = 0; i < ws->tiling->length; ++i) {
+		struct sway_container *child = ws->tiling->items[i];
+		content_width += child->pending.width;
+		if (i + 1 < ws->tiling->length) {
+			content_width += ws->gaps_inner;
+		}
+	}
+
+	return content_width;
+}
+
+static int clamp_scrollable_scroll_x(struct sway_workspace *ws,
+		int scroll_x) {
+	struct wlr_box box;
+	workspace_get_box(ws, &box);
+
+	int max_scroll_x = get_scrollable_content_width(ws) - box.width;
+	if (max_scroll_x < 0) {
+		max_scroll_x = 0;
+	}
+	if (scroll_x < 0) {
+		return 0;
+	}
+	if (scroll_x > max_scroll_x) {
+		return max_scroll_x;
+	}
+	return scroll_x;
+}
+
+static int get_visual_scroll_x(struct sway_workspace *ws) {
+	struct wlr_box box;
+	workspace_get_box(ws, &box);
+
+	int scroll_x = box.x - ws->layers.tiling->node.x;
+	return clamp_scrollable_scroll_x(ws, scroll_x);
+}
+
+static void adjust_scrollable_resize_position(
+		struct seatop_resize_tiling_event *e) {
+	if (!e->h_con_is_scrollable_column || !e->h_con ||
+			e->edge_x != WLR_EDGE_LEFT) {
+		return;
+	}
+
+	struct sway_workspace *ws = e->h_con->pending.workspace;
+	if (!ws) {
+		return;
+	}
+
+	int scroll_delta = e->h_con->pending.width - e->h_con_orig_width;
+	int scroll_x = clamp_scrollable_scroll_x(ws,
+		e->h_con_orig_scroll_x + scroll_delta);
+
+	struct wlr_box box;
+	workspace_get_box(ws, &box);
+	wlr_scene_node_set_position(&ws->layers.tiling->node,
+		box.x - scroll_x, ws->layers.tiling->node.y);
+	ws->scroll_x = scroll_x;
+	ws->target_scroll_x = scroll_x;
 }
 
 static void update_scrollable_resize_state(
@@ -100,8 +168,13 @@ static void handle_pointer_motion(struct sway_seat *seat, uint32_t time_msec) {
 
 	if (e->h_con) {
 		if (e->h_con_is_scrollable_column) {
-			amount_x = (e->h_con_orig_width + moved_x) -
-				e->h_con->pending.width;
+			if (e->edge_x == WLR_EDGE_LEFT) {
+				amount_x = (e->h_con_orig_width - moved_x) -
+					e->h_con->pending.width;
+			} else if (e->edge_x == WLR_EDGE_RIGHT) {
+				amount_x = (e->h_con_orig_width + moved_x) -
+					e->h_con->pending.width;
+			}
 		} else if (e->edge_x == WLR_EDGE_LEFT) {
 			amount_x = (e->h_con_orig_width - moved_x) - e->h_con->pending.width;
 		} else if (e->edge_x == WLR_EDGE_RIGHT) {
@@ -118,6 +191,7 @@ static void handle_pointer_motion(struct sway_seat *seat, uint32_t time_msec) {
 
 	if (amount_x != 0) {
 		container_resize_tiled(e->h_con, e->edge_x, amount_x);
+		adjust_scrollable_resize_position(e);
 	}
 	if (amount_y != 0) {
 		container_resize_tiled(e->v_con, e->edge_y, amount_y);
@@ -175,6 +249,8 @@ void seatop_begin_resize_tiling(struct sway_seat *seat,
 			container_set_resizing(e->h_con, true);
 			container_set_resizing(e->h_sib, true);
 			e->h_con_orig_width = e->h_con->pending.width;
+			e->h_con_orig_scroll_x =
+				get_visual_scroll_x(e->h_con->pending.workspace);
 		}
 	}
 	if (edge & (WLR_EDGE_TOP | WLR_EDGE_BOTTOM)) {

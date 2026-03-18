@@ -73,13 +73,30 @@ static bool edge_is_external(struct sway_container *cont, enum wlr_edges edge) {
 	return true;
 }
 
+static void get_container_visible_box(struct sway_container *cont,
+		struct wlr_box *box) {
+	wlr_scene_node_coords(&cont->scene_tree->node, &box->x, &box->y);
+	box->width = cont->current.width > 0 ?
+		cont->current.width : cont->pending.width;
+	box->height = cont->current.height > 0 ?
+		cont->current.height : cont->pending.height;
+}
+
 static enum wlr_edges find_edge(struct sway_container *cont,
 		struct wlr_surface *surface, struct sway_cursor *cursor) {
 	if (!cont->view || (surface && cont->view->surface != surface)) {
 		return WLR_EDGE_NONE;
 	}
-	if (cont->pending.border == B_NONE || !cont->pending.border_thickness ||
-			cont->pending.border == B_CSD) {
+
+	struct wlr_box box;
+	get_container_visible_box(cont, &box);
+
+	enum sway_container_border border =
+		(box.width > 0 || box.height > 0) ?
+		cont->current.border : cont->pending.border;
+	int border_thickness = cont->current.border_thickness > 0 ?
+		cont->current.border_thickness : cont->pending.border_thickness;
+	if (border == B_NONE || border == B_CSD || border_thickness <= 0) {
 		return WLR_EDGE_NONE;
 	}
 	if (cont->pending.fullscreen_mode) {
@@ -87,16 +104,16 @@ static enum wlr_edges find_edge(struct sway_container *cont,
 	}
 
 	enum wlr_edges edge = 0;
-	if (cursor->cursor->x < cont->pending.x + cont->pending.border_thickness) {
+	if (cursor->cursor->x < box.x + border_thickness) {
 		edge |= WLR_EDGE_LEFT;
 	}
-	if (cursor->cursor->y < cont->pending.y + cont->pending.border_thickness) {
+	if (cursor->cursor->y < box.y + border_thickness) {
 		edge |= WLR_EDGE_TOP;
 	}
-	if (cursor->cursor->x >= cont->pending.x + cont->pending.width - cont->pending.border_thickness) {
+	if (cursor->cursor->x >= box.x + box.width - border_thickness) {
 		edge |= WLR_EDGE_RIGHT;
 	}
-	if (cursor->cursor->y >= cont->pending.y + cont->pending.height - cont->pending.border_thickness) {
+	if (cursor->cursor->y >= box.y + box.height - border_thickness) {
 		edge |= WLR_EDGE_BOTTOM;
 	}
 
@@ -437,13 +454,15 @@ static void handle_button(struct sway_seat *seat, uint32_t time_msec,
 			column->pending.workspace &&
 			column->pending.workspace->layout == L_SCROLL_H;
 		struct sway_container *resize_target = scrollable_column ? column : cont;
+		struct wlr_box resize_target_box;
+		get_container_visible_box(resize_target, &resize_target_box);
 
 		edge = cursor->cursor->x >
-			resize_target->pending.x + resize_target->pending.width / 2 ?
+			resize_target_box.x + resize_target_box.width / 2 ?
 			WLR_EDGE_RIGHT : WLR_EDGE_LEFT;
 		if (!scrollable_column) {
 			edge |= cursor->cursor->y >
-				resize_target->pending.y + resize_target->pending.height / 2 ?
+				resize_target_box.y + resize_target_box.height / 2 ?
 				WLR_EDGE_BOTTOM : WLR_EDGE_TOP;
 		}
 
@@ -506,10 +525,12 @@ static void handle_button(struct sway_seat *seat, uint32_t time_msec,
 		// Via mod+click
 		if (mod_resize_btn_pressed) {
 			struct sway_container *floater = container_toplevel_ancestor(cont);
+			struct wlr_box floater_box;
+			get_container_visible_box(floater, &floater_box);
 			edge = 0;
-			edge |= cursor->cursor->x > floater->pending.x + floater->pending.width / 2 ?
+			edge |= cursor->cursor->x > floater_box.x + floater_box.width / 2 ?
 				WLR_EDGE_RIGHT : WLR_EDGE_LEFT;
-			edge |= cursor->cursor->y > floater->pending.y + floater->pending.height / 2 ?
+			edge |= cursor->cursor->y > floater_box.y + floater_box.height / 2 ?
 				WLR_EDGE_BOTTOM : WLR_EDGE_TOP;
 			seat_set_focus_container(seat, floater);
 			seatop_begin_resize_floating(seat, floater, edge);
