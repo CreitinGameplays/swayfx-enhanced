@@ -48,6 +48,7 @@ Enable a niri-style horizontal strip layout for top-level tiled windows.
 Current interaction behavior:
 - New tiled windows open as new top-level columns.
 - `Shift` + mouse wheel moves focus left or right across columns using the focused window, not the pointer location.
+- `$mod` + `Shift` + `Left`/`Right` moves the focused column left or right in the scrollable strip.
 - Focus navigation wraps around at the ends of the strip.
 - `Mod` + right click resizes scrollable columns directly.
 - Tiling drag gestures reorder top-level columns instead of splitting them.
