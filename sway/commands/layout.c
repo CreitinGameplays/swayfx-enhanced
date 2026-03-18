@@ -139,6 +139,10 @@ struct cmd_results *cmd_layout(int argc, char **argv) {
 		return cmd_results_new(CMD_INVALID,
 				"Can't run this command while there's no outputs connected.");
 	}
+	if (!workspace && container) {
+		workspace = container->pending.workspace;
+	}
+	struct sway_workspace *target_workspace = workspace;
 
 	if (container && container_is_floating(container)) {
 		return cmd_results_new(CMD_FAILURE,
@@ -171,6 +175,11 @@ struct cmd_results *cmd_layout(int argc, char **argv) {
 	}
 	if (new_layout == L_NONE) {
 		return cmd_results_new(CMD_INVALID, "%s", expected_syntax);
+	}
+	if (target_workspace && target_workspace->layout == L_SCROLL_H &&
+			new_layout != L_SCROLL_H) {
+		return cmd_results_new(CMD_FAILURE,
+				"Layout changes are unavailable while scrollable layout is active");
 	}
 	if (new_layout == L_SCROLL_H) {
 		old_layout = workspace->layout;

@@ -12,6 +12,13 @@
 static struct cmd_results *do_split(int layout) {
 	struct sway_container *con = config->handler_context.container;
 	struct sway_workspace *ws = config->handler_context.workspace;
+	if (!ws && con) {
+		ws = con->pending.workspace;
+	}
+	if (ws && ws->layout == L_SCROLL_H) {
+		return cmd_results_new(CMD_FAILURE,
+				"Split commands are unavailable while scrollable layout is active");
+	}
 	if (con) {
 		if (container_is_scratchpad_hidden_or_child(con) &&
 				con->pending.fullscreen_mode != FULLSCREEN_GLOBAL) {
@@ -35,6 +42,13 @@ static struct cmd_results *do_split(int layout) {
 static struct cmd_results *do_unsplit(void) {
 	struct sway_container *con = config->handler_context.container;
 	struct sway_workspace *ws = config->handler_context.workspace;
+	if (!ws && con) {
+		ws = con->pending.workspace;
+	}
+	if (ws && ws->layout == L_SCROLL_H) {
+		return cmd_results_new(CMD_FAILURE,
+				"Split commands are unavailable while scrollable layout is active");
+	}
 
 	if (con && con->pending.parent && con->pending.parent->pending.children->length == 1) {
 		container_flatten(con->pending.parent);
