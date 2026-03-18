@@ -13,7 +13,7 @@ SwayFX expands Sway's feature set to include eye-candy that many users have been
 + **Blur**: Sophisticated background blur for windows and layers.
 + **Shadows**: Real-time window drop shadows.
 + **Rounded Corners**: Anti-aliased rounded corners for windows, borders, and titlebars.
-+ **Animations**: Smooth window movement and resizing animations, plus a fast default fade-in when windows map.
++ **Animations**: Smooth window movement and resizing animations, plus fast default pop/expand animations when windows open and close.
 + **Scrollable Tiling**: Fixed-width horizontal columns with animated workspace panning, wrap-around navigation, and direct column resizing.
 + **New: Liquid Glass (Experimental)**: A unique refractive glass effect.
 + **Dimming**: Dim unfocused windows to help you focus.
@@ -30,7 +30,7 @@ SwayFX expands Sway's feature set to include eye-candy that many users have been
 Control the duration of window movement and resizing animations.
 - `animation_duration_ms <value>`: Duration in milliseconds (0-5000, default: 90).
 
-New windows also fade in by default using the same animation timing.
+New windows use pop/expand animations by default when opening and closing, using the same animation timing.
 
 Default config convenience:
 - `Mod+m maximize`: Maximize the focused window to the current workspace without entering fullscreen.

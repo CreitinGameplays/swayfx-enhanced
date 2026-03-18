@@ -42,7 +42,43 @@ static void view_map_animation_update(void) {
 	if (!server.pending_transaction) {
 		arrange_root();
 	}
+	transaction_arrange_closing_containers();
 }
+
+static bool view_close_animation_has_title_bar(struct sway_view *view) {
+	struct sway_container *con = view->container;
+	if (!con) {
+		return true;
+	}
+
+	enum sway_container_layout parent_layout = L_NONE;
+	int parent_children = 0;
+	if (con->pending.parent) {
+		parent_layout = con->pending.parent->pending.layout;
+		parent_children = con->pending.parent->pending.children->length;
+	} else if (con->pending.workspace) {
+		parent_layout = con->pending.workspace->layout;
+		parent_children = con->pending.workspace->tiling->length;
+	}
+
+	if (parent_layout != L_TABBED && parent_layout != L_STACKED) {
+		return true;
+	}
+
+	if (config->hide_lone_tab && parent_children == 1 &&
+			con->pending.border != B_NORMAL) {
+		return true;
+	}
+
+	return false;
+}
+
+struct saved_buffer_data {
+	int x;
+	int y;
+	int width;
+	int height;
+};
 
 bool view_init(struct sway_view *view, enum sway_view_type type,
 		const struct sway_view_impl *impl) {
@@ -1006,6 +1042,8 @@ void view_unmap(struct sway_view *view) {
 
 	struct sway_container *parent = view->container->pending.parent;
 	struct sway_workspace *ws = view->container->pending.workspace;
+	view->container->animation_state.close_title_bar =
+		view_close_animation_has_title_bar(view);
 	container_begin_destroy(view->container);
 	if (parent) {
 		container_reap_empty(parent);
@@ -1255,8 +1293,16 @@ void view_remove_saved_buffer(struct sway_view *view) {
 		return;
 	}
 
+	struct wlr_scene_node *node;
+	wl_list_for_each(node, &view->saved_surface_tree->children, link) {
+		free(node->data);
+		node->data = NULL;
+	}
+
 	wlr_scene_node_destroy(&view->saved_surface_tree->node);
 	view->saved_surface_tree = NULL;
+	view->saved_buffer_width = 0;
+	view->saved_buffer_height = 0;
 	wlr_scene_node_set_enabled(&view->content_tree->node, true);
 }
 
@@ -1278,6 +1324,17 @@ static void view_save_buffer_iterator(struct wlr_scene_buffer *buffer,
 	wlr_scene_buffer_set_transform(sbuf, buffer->transform);
 	wlr_scene_buffer_set_buffer(sbuf, buffer->buffer);
 	wlr_scene_buffer_set_corner_radii(sbuf, buffer->corners);
+
+	struct saved_buffer_data *saved = calloc(1, sizeof(*saved));
+	if (!saved) {
+		sway_log(SWAY_ERROR, "Could not allocate saved buffer metadata");
+		return;
+	}
+	saved->x = sx;
+	saved->y = sy;
+	saved->width = buffer->dst_width;
+	saved->height = buffer->dst_height;
+	sbuf->node.data = saved;
 }
 
 void view_save_buffer(struct sway_view *view) {
@@ -1298,8 +1355,41 @@ void view_save_buffer(struct sway_view *view) {
 	wlr_scene_node_for_each_buffer(&view->content_tree->node,
 		view_save_buffer_iterator, view->saved_surface_tree);
 
+	view->saved_buffer_width = view->container ?
+		view->container->current.content_width : 0;
+	view->saved_buffer_height = view->container ?
+		view->container->current.content_height : 0;
+
 	wlr_scene_node_set_enabled(&view->content_tree->node, false);
 	wlr_scene_node_set_enabled(&view->saved_surface_tree->node, true);
+}
+
+void view_update_saved_buffer_scale(struct sway_view *view, float scale,
+		int width, int height) {
+	if (!view->saved_surface_tree || view->saved_buffer_width <= 0 ||
+			view->saved_buffer_height <= 0) {
+		return;
+	}
+
+	int scaled_width = (int)(view->saved_buffer_width * scale);
+	int scaled_height = (int)(view->saved_buffer_height * scale);
+	int offset_x = (width - scaled_width) / 2;
+	int offset_y = (height - scaled_height) / 2;
+	wlr_scene_node_set_position(&view->saved_surface_tree->node, offset_x, offset_y);
+
+	struct wlr_scene_node *node;
+	wl_list_for_each(node, &view->saved_surface_tree->children, link) {
+		if (node->type != WLR_SCENE_NODE_BUFFER || !node->data) {
+			continue;
+		}
+		struct saved_buffer_data *saved = node->data;
+		struct wlr_scene_buffer *buffer = wlr_scene_buffer_from_node(node);
+		wlr_scene_node_set_position(node,
+			(int)(saved->x * scale), (int)(saved->y * scale));
+		wlr_scene_buffer_set_dest_size(buffer,
+			MAX((int)(saved->width * scale), 1),
+			MAX((int)(saved->height * scale), 1));
+	}
 }
 
 bool view_is_transient_for(struct sway_view *child,

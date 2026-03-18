@@ -186,6 +186,7 @@ struct sway_container *container_create(struct sway_view *view) {
 	*c->animation_state.open_animation = init_animation();
 	c->animation_state.open_animation->progress = 1.0f;
 	c->animation_state.open_animation->multiplier = 1.0f;
+	c->animation_state.close_timer = NULL;
 	c->animation_state.delta_x = 0;
 	c->animation_state.delta_y = 0;
 	c->animation_state.delta_width = 0;
@@ -194,6 +195,8 @@ struct sway_container *container_create(struct sway_view *view) {
 	c->animation_state.current_height = -1;
 	c->animation_state.current_content_width = -1;
 	c->animation_state.current_content_height = -1;
+	c->animation_state.close_running = false;
+	c->animation_state.close_title_bar = true;
 
 	wl_signal_init(&c->events.destroy);
 	wl_signal_emit_mutable(&root->events.new_node, &c->node);
@@ -260,9 +263,11 @@ float container_get_effective_alpha(struct sway_container *con) {
 	}
 
 	float alpha = con->alpha;
-	if (con->animation_state.open_animation) {
-		alpha *= get_animated_value(0.0f, 1.0f,
-			*con->animation_state.open_animation);
+	if (con->animation_state.close_running &&
+			con->animation_state.open_animation) {
+		float fade_progress =
+			con->animation_state.open_animation->multiplier / 0.7f;
+		alpha *= 1.0f - MIN(fade_progress, 1.0f);
 	}
 
 	return alpha;
@@ -602,6 +607,8 @@ void container_destroy(struct sway_container *con) {
 		}
 	}
 
+	transaction_close_animation_cancel(con);
+
 	if (con->animation_state.animation) {
 		if (con->animation_state.animation->initialized) {
 			con->animation_state.animation->initialized = false;
@@ -618,6 +625,7 @@ void container_destroy(struct sway_container *con) {
 		free(con->animation_state.open_animation);
 		con->animation_state.open_animation = NULL;
 	}
+	con->animation_state.close_running = false;
 
 	scene_node_disown_children(con->content_tree);
 	wlr_scene_node_destroy(&con->scene_tree->node);

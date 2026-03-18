@@ -41,7 +41,11 @@ struct sway_transaction_instruction {
 	bool waiting;
 };
 
+static list_t *closing_containers;
+static const float close_animation_duration_scale = 0.8f;
+
 static void animation_update_callback(void);
+static bool container_start_close_animation(struct sway_container *con);
 
 static int get_container_scroll_x_adjustment(struct sway_container *con) {
 	if (!con || container_is_floating_or_child(con)) {
@@ -88,8 +92,9 @@ static void transaction_destroy(struct sway_transaction *transaction) {
 				workspace_destroy(node->sway_workspace);
 				break;
 			case N_CONTAINER:
-				// TODO: perhaps handle close animation here!
-				container_destroy(node->sway_container);
+				if (!container_start_close_animation(node->sway_container)) {
+					container_destroy(node->sway_container);
+				}
 				break;
 			}
 		}
@@ -101,6 +106,28 @@ static void transaction_destroy(struct sway_transaction *transaction) {
 		wl_event_source_remove(transaction->timer);
 	}
 	free(transaction);
+}
+
+void transaction_close_animation_cancel(struct sway_container *con) {
+	if (closing_containers) {
+		int index = list_find(closing_containers, con);
+		if (index != -1) {
+			list_del(closing_containers, index);
+		}
+	}
+	if (con->animation_state.close_timer) {
+		wl_event_source_remove(con->animation_state.close_timer);
+		con->animation_state.close_timer = NULL;
+	}
+	con->animation_state.close_running = false;
+}
+
+static int handle_close_animation_timeout(void *data) {
+	struct sway_container *con = data;
+	con->animation_state.close_timer = NULL;
+	transaction_close_animation_cancel(con);
+	container_destroy(con);
+	return 0;
 }
 
 static void copy_output_state(struct sway_output *output,
@@ -254,7 +281,7 @@ static void apply_container_state(struct sway_container *container,
 
 	if (view) {
 		if (view->saved_surface_tree) {
-			if (!container->node.destroying || container->node.ntxnrefs == 1) {
+			if (!container->node.destroying) {
 				view_remove_saved_buffer(view);
 			}
 		}
@@ -430,7 +457,6 @@ static void arrange_container(struct sway_container *con,
 			con->scene_tree->node.x, *con->animation_state.animation);
 		int y = get_animated_value(con->scene_tree->node.y + con->animation_state.delta_y,
 			con->scene_tree->node.y, *con->animation_state.animation);
-		wlr_scene_node_set_position(&con->scene_tree->node, x, y);
 
 		width = get_animated_value(width + con->animation_state.delta_width, width,
 			*con->animation_state.animation);
@@ -442,6 +468,26 @@ static void arrange_container(struct sway_container *con,
 		if (height <= 0) {
 			return;
 		}
+
+		if (con->animation_state.open_animation) {
+			int target_width = width;
+			int target_height = height;
+			if (con->animation_state.close_running) {
+				x -= (target_width - con->animation_state.current_width) / 2;
+				y -= (target_height - con->animation_state.current_height) / 2;
+			}
+			float open_scale = con->animation_state.close_running ?
+				get_animated_value(1.0f, 0.88f,
+					*con->animation_state.open_animation) :
+				get_animated_value(0.88f, 1.0f,
+					*con->animation_state.open_animation);
+			width = MAX((int)(target_width * open_scale), 1);
+			height = MAX((int)(target_height * open_scale), 1);
+			x += (target_width - width) / 2;
+			y += (target_height - height) / 2;
+		}
+
+		wlr_scene_node_set_position(&con->scene_tree->node, x, y);
 	}
 	con->animation_state.current_width = width;
 	con->animation_state.current_height = height;
@@ -595,6 +641,12 @@ static void arrange_container(struct sway_container *con,
 		if (content_height <= 0) {
 			return;
 		}
+		if (con->animation_state.close_running) {
+			float close_scale = get_animated_value(1.0f, 0.88f,
+				*con->animation_state.open_animation);
+			view_update_saved_buffer_scale(con->view, close_scale,
+				content_width, content_height);
+		}
 
 		// Dim
 		if (con->dim_rect) {
@@ -613,7 +665,8 @@ static void arrange_container(struct sway_container *con,
 		wlr_scene_node_set_position(&con->view->scene_tree->node,
 			border_left, border_top);
 
-		wlr_scene_node_set_enabled(&con->blur->node, con->blur_enabled);
+		wlr_scene_node_set_enabled(&con->blur->node,
+			con->blur_enabled && !con->animation_state.close_running);
 		wlr_scene_node_set_position(&con->blur->node, border_left, border_top);
 		wlr_scene_blur_set_size(con->blur, content_width, content_height);
 
@@ -631,7 +684,8 @@ static void arrange_container(struct sway_container *con,
 		bool is_stacked = (parent_layout == L_STACKED);
 		bool is_tabbed_stacked = is_tabbed || is_stacked;
 
-		bool glass_enabled = container_has_liquid_glass(con);
+		bool glass_enabled = !con->animation_state.close_running &&
+			container_has_liquid_glass(con);
 		if (is_tabbed) {
 			glass_enabled = false;
 		}
@@ -1014,6 +1068,75 @@ static void animation_update_callback(void) {
 	if (!server.pending_transaction) {
 		arrange_root(root);
 	}
+	transaction_arrange_closing_containers();
+}
+
+void transaction_arrange_closing_containers(void) {
+	if (!closing_containers) {
+		return;
+	}
+
+	for (int i = 0; i < closing_containers->length; ++i) {
+		struct sway_container *con = closing_containers->items[i];
+		if (!con->animation_state.close_running) {
+			continue;
+		}
+		arrange_container(con, con->current.width, con->current.height,
+			con->animation_state.close_title_bar, 0);
+	}
+}
+
+static bool container_start_close_animation(struct sway_container *con) {
+	if (!config->animation_duration_ms || !con->view ||
+			!con->view->saved_surface_tree || con->animation_state.close_running) {
+		return false;
+	}
+
+	int lx, ly;
+	wlr_scene_node_coords(&con->scene_tree->node, &lx, &ly);
+	wlr_scene_node_reparent(&con->scene_tree->node, root->layers.floating);
+	wlr_scene_node_set_position(&con->scene_tree->node, lx, ly);
+
+	if (con->animation_state.animation &&
+			con->animation_state.animation->initialized) {
+		wl_list_remove(&con->animation_state.animation->link);
+		con->animation_state.animation->initialized = false;
+	}
+	con->animation_state.delta_x = 0;
+	con->animation_state.delta_y = 0;
+	con->animation_state.delta_width = 0;
+	con->animation_state.delta_height = 0;
+	con->animation_state.close_running = true;
+	wlr_scene_node_set_enabled(&con->blur->node, false);
+	wlr_scene_node_set_enabled(&con->liquid_glass->node, false);
+
+	if (!closing_containers) {
+		closing_containers = create_list();
+	}
+	if (!closing_containers) {
+		con->animation_state.close_running = false;
+		return false;
+	}
+	list_add(closing_containers, con);
+
+	con->animation_state.open_animation->duration_scale =
+		close_animation_duration_scale;
+	add_animation(con->animation_state.open_animation);
+
+	con->animation_state.close_timer = wl_event_loop_add_timer(
+		server.wl_event_loop, handle_close_animation_timeout, con);
+	if (!con->animation_state.close_timer) {
+		transaction_close_animation_cancel(con);
+		return false;
+	}
+
+	float close_duration_ms =
+		config->animation_duration_ms * close_animation_duration_scale;
+	int delay_ms = close_duration_ms > 1.0f ?
+		(int)close_duration_ms : 1;
+	wl_event_source_timer_update(con->animation_state.close_timer, delay_ms);
+	start_animations(&animation_update_callback);
+	return true;
 }
 
 static bool should_con_new_animation(struct sway_container *con, struct sway_container_state *new_state) {

@@ -22,6 +22,7 @@
  */
 
 struct sway_transaction_instruction;
+struct sway_container;
 struct sway_view;
 
 /**
@@ -60,5 +61,9 @@ bool transaction_notify_view_ready_by_geometry(struct sway_view *view,
 		double x, double y, int width, int height);
 
 void arrange_popups(struct wlr_scene_tree *popups);
+
+void transaction_arrange_closing_containers(void);
+
+void transaction_close_animation_cancel(struct sway_container *con);
 
 #endif

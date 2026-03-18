@@ -69,6 +69,8 @@ struct sway_view {
 	struct wlr_scene_tree *scene_tree;
 	struct wlr_scene_tree *content_tree;
 	struct wlr_scene_tree *saved_surface_tree;
+	int saved_buffer_width;
+	int saved_buffer_height;
 
 	struct sway_container *container; // NULL if unmapped and transactions finished
 	struct wlr_surface *surface; // NULL for unmapped views
@@ -347,6 +349,9 @@ bool view_is_urgent(struct sway_view *view);
 void view_remove_saved_buffer(struct sway_view *view);
 
 void view_save_buffer(struct sway_view *view);
+
+void view_update_saved_buffer_scale(struct sway_view *view, float scale,
+		int width, int height);
 
 bool view_is_transient_for(struct sway_view *child, struct sway_view *ancestor);
 

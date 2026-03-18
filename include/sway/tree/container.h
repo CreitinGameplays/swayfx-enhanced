@@ -181,6 +181,7 @@ struct sway_container {
 	struct {
 		struct animation *animation;
 		struct animation *open_animation;
+		struct wl_event_source *close_timer;
 		int delta_x;
 		int delta_y;
 		int delta_width;
@@ -189,6 +190,8 @@ struct sway_container {
 		int current_height;
 		int current_content_width; // needed for output.c
 		int current_content_height; // needed for output.c
+		bool close_running;
+		bool close_title_bar;
 	} animation_state;
 
 	struct {
