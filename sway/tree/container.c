@@ -1069,6 +1069,21 @@ void container_clear_maximized(struct sway_container *con) {
 	}
 }
 
+static void get_maximized_box(struct sway_container *con,
+		struct wlr_box *box) {
+	struct sway_workspace *workspace = con->pending.workspace;
+	if (workspace && workspace->output) {
+		struct sway_output *output = workspace->output;
+		box->x = output->lx + output->usable_area.x;
+		box->y = output->ly + output->usable_area.y;
+		box->width = output->usable_area.width;
+		box->height = output->usable_area.height;
+		return;
+	}
+
+	workspace_get_box(workspace, box);
+}
+
 void container_reconcile_maximized(struct sway_container *con) {
 	if (!container_is_maximized(con) || !container_is_floating(con) ||
 			!con->pending.workspace) {
@@ -1076,7 +1091,7 @@ void container_reconcile_maximized(struct sway_container *con) {
 	}
 
 	struct wlr_box box;
-	workspace_get_box(con->pending.workspace, &box);
+	get_maximized_box(con, &box);
 	con->pending.x = box.x;
 	con->pending.y = box.y;
 	con->pending.width = box.width;
