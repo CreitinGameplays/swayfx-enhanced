@@ -39,67 +39,6 @@ static struct sway_workspace *get_scrollable_workspace(void) {
 	return ws;
 }
 
-static int get_scroll_content_width(struct sway_workspace *ws) {
-	int content_width = 0;
-	for (int i = 0; i < ws->tiling->length; ++i) {
-		struct sway_container *child = ws->tiling->items[i];
-		content_width += child->pending.width;
-		if (i + 1 < ws->tiling->length) {
-			content_width += ws->gaps_inner;
-		}
-	}
-	return content_width;
-}
-
-static int get_scroll_max_offset(struct sway_workspace *ws) {
-	struct wlr_box box;
-	workspace_get_box(ws, &box);
-	int max_offset = get_scroll_content_width(ws) - box.width;
-	return max_offset > 0 ? max_offset : 0;
-}
-
-static int clamp_scroll_offset(struct sway_workspace *ws, int offset) {
-	int max_offset = get_scroll_max_offset(ws);
-	if (offset < 0) {
-		return 0;
-	}
-	if (offset > max_offset) {
-		return max_offset;
-	}
-	return offset;
-}
-
-static struct sway_container *get_scroll_focus(struct sway_workspace *ws) {
-	struct sway_container *focus =
-		workspace_get_focus_tiling_child(ws, get_command_seat());
-	if (!focus) {
-		return NULL;
-	}
-	return container_toplevel_ancestor(focus);
-}
-
-static int get_centered_scroll_offset(struct sway_workspace *ws) {
-	struct sway_container *focused = get_scroll_focus(ws);
-	if (!focused) {
-		return 0;
-	}
-
-	struct wlr_box box;
-	workspace_get_box(ws, &box);
-
-	int focused_x = 0;
-	for (int i = 0; i < ws->tiling->length; ++i) {
-		struct sway_container *child = ws->tiling->items[i];
-		if (child == focused) {
-			break;
-		}
-		focused_x += child->pending.width + ws->gaps_inner;
-	}
-
-	int offset = focused_x + focused->pending.width / 2 - box.width / 2;
-	return clamp_scroll_offset(ws, offset);
-}
-
 static bool parse_amount(int argc, char **argv, int *amount) {
 	if (argc == 1) {
 		*amount = scroll_default_amount;
@@ -148,7 +87,8 @@ struct cmd_results *cmd_scroll(int argc, char **argv) {
 			return cmd_results_new(CMD_INVALID, "%s", expected_syntax);
 		}
 		ws->scroll_follow_focus = false;
-		ws->target_scroll_x = get_centered_scroll_offset(ws);
+		ws->target_scroll_x =
+			workspace_scroll_center_offset(ws, get_command_seat());
 		arrange_workspace(ws);
 		transaction_commit_dirty();
 		return cmd_results_new(CMD_SUCCESS, NULL);
@@ -160,7 +100,7 @@ struct cmd_results *cmd_scroll(int argc, char **argv) {
 		}
 		ws->scroll_follow_focus = false;
 		ws->target_scroll_x = strcasecmp(argv[0], "home") == 0 ? 0 :
-			get_scroll_max_offset(ws);
+			workspace_scroll_max_offset(ws);
 		arrange_workspace(ws);
 		transaction_commit_dirty();
 		return cmd_results_new(CMD_SUCCESS, NULL);
@@ -181,7 +121,7 @@ struct cmd_results *cmd_scroll(int argc, char **argv) {
 	}
 
 	ws->scroll_follow_focus = false;
-	ws->target_scroll_x = clamp_scroll_offset(ws,
+	ws->target_scroll_x = workspace_scroll_clamp(ws,
 		ws->target_scroll_x + direction * amount);
 	arrange_workspace(ws);
 	transaction_commit_dirty();

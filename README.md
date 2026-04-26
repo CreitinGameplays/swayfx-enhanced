@@ -44,9 +44,15 @@ Enable a niri-style horizontal strip layout for top-level tiled windows.
 - `scroll center`: Center the focused column in the visible area.
 - `scroll home|end`: Jump the camera to the beginning or end of the workspace strip.
 - `scroll follow`: Return to focus-following camera behavior.
+- `scrollable_tiling_touchpad_scroll enable|disable`: Enable direct two-finger horizontal touchpad panning for scrollable workspaces. Disabled by default.
+- `scrollable_tiling_touchpad_scroll_factor <float>`: Scale touchpad pan distance. Defaults to `1.0`.
+- `scrollable_tiling_touchpad_pinch_resize enable|disable`: Enable touchpad pinch resizing for the focused scrollable column. Disabled by default.
+- `scrollable_tiling_touchpad_pinch_resize_factor <float>`: Scale pinch resize sensitivity. Defaults to `1.0`.
 
 Current interaction behavior:
 - New tiled windows open as new top-level columns.
+- Two-finger horizontal touchpad gestures pan the workspace camera when `scrollable_tiling_touchpad_scroll` is enabled.
+- Pinch outward grows the focused scrollable column and pinch inward shrinks it when `scrollable_tiling_touchpad_pinch_resize` is enabled. Maximized columns pass pinch gestures through to apps for page zoom.
 - `Shift` + mouse wheel moves focus left or right across columns using the focused window, not the pointer location.
 - `$mod` + `Shift` + `Left`/`Right` moves the focused column left or right in the scrollable strip.
 - Focus navigation wraps around at the ends of the strip.

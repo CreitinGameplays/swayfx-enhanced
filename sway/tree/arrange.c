@@ -22,33 +22,9 @@ static struct sway_container *workspace_get_pending_scroll_focus(
 		input_manager_current_seat());
 }
 
-static int get_pending_scroll_layout_content_width(list_t *children, int gaps) {
-	int content_width = 0;
-	for (int i = 0; i < children->length; ++i) {
-		struct sway_container *child = children->items[i];
-		content_width += child->pending.width;
-		if (i + 1 < children->length) {
-			content_width += gaps;
-		}
-	}
-	return content_width;
-}
-
 static int clamp_pending_scroll_layout_target(struct sway_workspace *workspace,
 		int width, int target) {
-	int content_width = get_pending_scroll_layout_content_width(
-		workspace->tiling, workspace->gaps_inner);
-	int max_offset = content_width - width;
-	if (max_offset < 0) {
-		max_offset = 0;
-	}
-	if (target < 0) {
-		return 0;
-	}
-	if (target > max_offset) {
-		return max_offset;
-	}
-	return target;
+	return workspace_scroll_clamp_width(workspace, width, target);
 }
 
 static int get_pending_scroll_layout_target(struct sway_workspace *workspace,

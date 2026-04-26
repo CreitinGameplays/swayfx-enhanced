@@ -733,6 +733,69 @@ struct sway_container *workspace_get_focus_tiling_child(
 	return focus;
 }
 
+int workspace_scroll_content_width(struct sway_workspace *ws) {
+	int content_width = 0;
+	for (int i = 0; i < ws->tiling->length; ++i) {
+		struct sway_container *child = ws->tiling->items[i];
+		content_width += child->pending.width;
+		if (i + 1 < ws->tiling->length) {
+			content_width += ws->gaps_inner;
+		}
+	}
+	return content_width;
+}
+
+int workspace_scroll_clamp_width(struct sway_workspace *ws, int width,
+		int offset) {
+	int max_offset = workspace_scroll_content_width(ws) - width;
+	if (max_offset < 0) {
+		max_offset = 0;
+	}
+	if (offset < 0) {
+		return 0;
+	}
+	if (offset > max_offset) {
+		return max_offset;
+	}
+	return offset;
+}
+
+int workspace_scroll_max_offset(struct sway_workspace *ws) {
+	struct wlr_box box;
+	workspace_get_box(ws, &box);
+	return workspace_scroll_clamp_width(ws, box.width, INT_MAX);
+}
+
+int workspace_scroll_clamp(struct sway_workspace *ws, int offset) {
+	struct wlr_box box;
+	workspace_get_box(ws, &box);
+	return workspace_scroll_clamp_width(ws, box.width, offset);
+}
+
+int workspace_scroll_center_offset(struct sway_workspace *ws,
+		struct sway_seat *seat) {
+	struct sway_container *focused = workspace_get_focus_tiling_child(ws, seat);
+	if (!focused) {
+		return 0;
+	}
+	focused = container_toplevel_ancestor(focused);
+
+	struct wlr_box box;
+	workspace_get_box(ws, &box);
+
+	int focused_x = 0;
+	for (int i = 0; i < ws->tiling->length; ++i) {
+		struct sway_container *child = ws->tiling->items[i];
+		if (child == focused) {
+			break;
+		}
+		focused_x += child->pending.width + ws->gaps_inner;
+	}
+
+	int offset = focused_x + focused->pending.width / 2 - box.width / 2;
+	return workspace_scroll_clamp_width(ws, box.width, offset);
+}
+
 void workspace_for_each_container(struct sway_workspace *ws,
 		void (*f)(struct sway_container *con, void *data), void *data) {
 	// Tiling

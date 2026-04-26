@@ -575,6 +575,10 @@ struct sway_config {
 
 	bool tiling_drag;
 	int tiling_drag_threshold;
+	bool scrollable_tiling_touchpad_scroll;
+	float scrollable_tiling_touchpad_scroll_factor;
+	bool scrollable_tiling_touchpad_pinch_resize;
+	float scrollable_tiling_touchpad_pinch_resize_factor;
 
 	enum smart_gaps_mode smart_gaps;
 	int gaps_inner;

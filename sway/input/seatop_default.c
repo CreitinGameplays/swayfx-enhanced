@@ -1,4 +1,5 @@
 #include <float.h>
+#include <math.h>
 #include <libevdev/libevdev.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_subcompositor.h>
@@ -6,6 +7,7 @@
 #include <wlr/types/wlr_xcursor_manager.h>
 #include "gesture.h"
 #include "sway/desktop/transaction.h"
+#include "sway/tree/arrange.h"
 #include "sway/input/cursor.h"
 #include "sway/input/seat.h"
 #include "sway/input/tablet.h"
@@ -13,6 +15,7 @@
 #include "sway/output.h"
 #include "sway/server.h"
 #include "sway/scene_descriptor.h"
+#include "sway/tree/node.h"
 #include "sway/tree/view.h"
 #include "sway/tree/workspace.h"
 #include "log.h"
@@ -25,7 +28,54 @@ struct seatop_default_event {
 	uint32_t pressed_buttons[SWAY_CURSOR_PRESSED_BUTTONS_CAP];
 	size_t pressed_button_count;
 	struct gesture_tracker gestures;
+	struct sway_workspace *scrollable_axis_workspace;
+	double scrollable_axis_remainder;
+	struct sway_container *pinch_resize_column;
+	double pinch_resize_orig_width_fraction;
+	int pinch_resize_orig_width;
+	int pinch_resize_orig_scroll_x;
+	int pinch_resize_anchor_x;
 };
+
+static bool container_tree_is_maximized(struct sway_container *con) {
+	if (!con) {
+		return false;
+	}
+	if (container_is_maximized(con)) {
+		return true;
+	}
+	if (!con->pending.children) {
+		return false;
+	}
+
+	for (int i = 0; i < con->pending.children->length; ++i) {
+		struct sway_container *child = con->pending.children->items[i];
+		if (container_tree_is_maximized(child)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool workspace_has_maximized_container(struct sway_workspace *ws) {
+	if (!ws) {
+		return false;
+	}
+
+	for (int i = 0; i < ws->tiling->length; ++i) {
+		struct sway_container *child = ws->tiling->items[i];
+		if (container_tree_is_maximized(child)) {
+			return true;
+		}
+	}
+	for (int i = 0; i < ws->floating->length; ++i) {
+		struct sway_container *child = ws->floating->items[i];
+		if (container_tree_is_maximized(child)) {
+			return true;
+		}
+	}
+	return false;
+}
 
 /*-----------------------------------------\
  * Functions shared by multiple callbacks  /
@@ -829,6 +879,52 @@ static bool handle_scrollable_workspace_axis(struct sway_seat *seat,
 	return true;
 }
 
+static bool handle_scrollable_touchpad_axis(struct sway_seat *seat,
+		struct wlr_pointer_axis_event *event, struct sway_node *node,
+		struct sway_container *cont) {
+	if (!config->scrollable_tiling_touchpad_scroll ||
+			config->scrollable_tiling_touchpad_scroll_factor == 0.0f ||
+			event->orientation != WL_POINTER_AXIS_HORIZONTAL_SCROLL ||
+			event->source != WL_POINTER_AXIS_SOURCE_FINGER) {
+		return false;
+	}
+
+	struct sway_workspace *ws = seat_get_focused_workspace(seat);
+	if (!ws || ws->layout != L_SCROLL_H || ws->tiling->length == 0 ||
+			ws->fullscreen || workspace_has_maximized_container(ws)) {
+		return false;
+	}
+	if (node && node->type == N_WORKSPACE) {
+		if (node->sway_workspace != ws) {
+			return false;
+		}
+	} else if (!cont || cont->pending.workspace != ws) {
+		return false;
+	}
+
+	struct seatop_default_event *e = seat->seatop_data;
+	if (e->scrollable_axis_workspace != ws) {
+		e->scrollable_axis_workspace = ws;
+		e->scrollable_axis_remainder = 0.0;
+	}
+
+	double delta = event->delta *
+		config->scrollable_tiling_touchpad_scroll_factor +
+		e->scrollable_axis_remainder;
+	int amount = (int)round(delta);
+	e->scrollable_axis_remainder = delta - amount;
+	if (amount == 0) {
+		return true;
+	}
+
+	ws->scroll_follow_focus = false;
+	ws->target_scroll_x = workspace_scroll_clamp(ws,
+		ws->target_scroll_x + amount);
+	arrange_workspace(ws);
+	transaction_commit_dirty();
+	return true;
+}
+
 static void handle_pointer_axis(struct sway_seat *seat,
 		struct wlr_pointer_axis_event *event) {
 	struct sway_input_device *input_device =
@@ -878,6 +974,10 @@ static void handle_pointer_axis(struct sway_seat *seat,
 
 	if (!handled) {
 		handled = handle_scrollable_workspace_axis(seat, modifiers, event);
+	}
+
+	if (!handled) {
+		handled = handle_scrollable_touchpad_axis(seat, event, node, cont);
 	}
 
 	// Scrolling on a tabbed or stacked title bar (handled as press event)
@@ -1059,6 +1159,154 @@ static void gesture_binding_execute(struct sway_seat *seat,
 	free(dummy_binding);
 }
 
+static bool cursor_is_over_workspace_or_container(struct sway_seat *seat,
+		struct sway_workspace *ws) {
+	struct sway_cursor *cursor = seat->cursor;
+	struct wlr_surface *surface = NULL;
+	double sx, sy;
+	struct sway_node *node = node_at_coords(seat,
+		cursor->cursor->x, cursor->cursor->y, &surface, &sx, &sy);
+	struct sway_container *cont = node && node->type == N_CONTAINER ?
+		node->sway_container : NULL;
+
+	if (node && node->type == N_WORKSPACE) {
+		return node->sway_workspace == ws;
+	}
+	return cont && cont->pending.workspace == ws;
+}
+
+static int get_workspace_visual_scroll_x(struct sway_workspace *ws) {
+	struct wlr_box box;
+	workspace_get_box(ws, &box);
+	return workspace_scroll_clamp(ws, box.x - ws->layers.tiling->node.x);
+}
+
+static bool handle_scrollable_pinch_resize_begin(struct sway_seat *seat) {
+	if (!config->scrollable_tiling_touchpad_pinch_resize ||
+			config->scrollable_tiling_touchpad_pinch_resize_factor == 0.0f) {
+		return false;
+	}
+
+	struct sway_workspace *ws = seat_get_focused_workspace(seat);
+	if (!ws || ws->layout != L_SCROLL_H || ws->tiling->length == 0 ||
+			ws->fullscreen || workspace_has_maximized_container(ws) ||
+			!cursor_is_over_workspace_or_container(seat, ws)) {
+		return false;
+	}
+
+	struct sway_container *focused =
+		workspace_get_focus_tiling_child(ws, seat);
+	if (!focused) {
+		return false;
+	}
+
+	struct sway_container *column = container_toplevel_ancestor(focused);
+	if (!column || column->pending.parent || column->pending.workspace != ws ||
+			container_is_maximized(column)) {
+		return false;
+	}
+
+	struct wlr_box box;
+	workspace_get_box(ws, &box);
+	double width_fraction = column->width_fraction;
+	if (width_fraction <= 0.0 && box.width > 0) {
+		int width = column->pending.width > 0 ?
+			column->pending.width : column->current.width;
+		width_fraction = (double)width / box.width;
+	}
+	if (width_fraction <= 0.0) {
+		return false;
+	}
+
+	struct seatop_default_event *seatop = seat->seatop_data;
+	seatop->pinch_resize_column = column;
+	seatop->pinch_resize_orig_width_fraction = width_fraction;
+	seatop->pinch_resize_orig_width = column->pending.width > 0 ?
+		column->pending.width : column->current.width;
+	seatop->pinch_resize_orig_scroll_x = get_workspace_visual_scroll_x(ws);
+	seatop->pinch_resize_anchor_x =
+		column->pending.x + seatop->pinch_resize_orig_width / 2 -
+		seatop->pinch_resize_orig_scroll_x;
+	ws->scroll_animation_state.interactive_resize = true;
+	return true;
+}
+
+static bool handle_scrollable_pinch_resize_update(struct sway_seat *seat,
+		double scale) {
+	struct seatop_default_event *seatop = seat->seatop_data;
+	struct sway_container *column = seatop->pinch_resize_column;
+	if (!column || scale <= 0.0) {
+		return false;
+	}
+
+	struct sway_workspace *ws = column->pending.workspace;
+	if (!ws || ws->layout != L_SCROLL_H) {
+		if (ws) {
+			ws->scroll_animation_state.interactive_resize = false;
+		}
+		seatop->pinch_resize_column = NULL;
+		return true;
+	}
+
+	struct wlr_box box;
+	workspace_get_box(ws, &box);
+	if (box.width <= 0) {
+		return true;
+	}
+
+	double min_fraction = (double)MIN_SANE_W / box.width;
+	double resized_fraction = seatop->pinch_resize_orig_width_fraction *
+		pow(scale, config->scrollable_tiling_touchpad_pinch_resize_factor);
+	column->width_fraction = fmin(1.0, fmax(min_fraction, resized_fraction));
+
+	ws->scroll_follow_focus = false;
+	arrange_workspace(ws);
+
+	int scroll_x = workspace_scroll_clamp(ws,
+		column->pending.x + column->pending.width / 2 -
+		seatop->pinch_resize_anchor_x);
+	if (column->pending.width <= box.width) {
+		int left = column->pending.x;
+		int right = left + column->pending.width;
+		if (left < scroll_x) {
+			scroll_x = left;
+		} else if (right > scroll_x + box.width) {
+			scroll_x = right - box.width;
+		}
+		scroll_x = workspace_scroll_clamp(ws, scroll_x);
+	}
+	wlr_scene_node_set_position(&ws->layers.tiling->node,
+		box.x - scroll_x, ws->layers.tiling->node.y);
+	ws->scroll_x = scroll_x;
+	ws->target_scroll_x = scroll_x;
+
+	transaction_commit_dirty();
+	return true;
+}
+
+static bool handle_scrollable_pinch_resize_end(struct sway_seat *seat) {
+	struct seatop_default_event *seatop = seat->seatop_data;
+	struct sway_container *column = seatop->pinch_resize_column;
+	if (!column) {
+		return false;
+	}
+
+	struct sway_workspace *ws = column->pending.workspace;
+	if (ws) {
+		ws->scroll_animation_state.interactive_resize = false;
+		ws->target_scroll_x = workspace_scroll_clamp(ws, ws->target_scroll_x);
+		arrange_workspace(ws);
+		transaction_commit_dirty();
+	}
+
+	seatop->pinch_resize_column = NULL;
+	seatop->pinch_resize_orig_width_fraction = 0.0;
+	seatop->pinch_resize_orig_width = 0;
+	seatop->pinch_resize_orig_scroll_x = 0;
+	seatop->pinch_resize_anchor_x = 0;
+	return true;
+}
+
 static void handle_hold_begin(struct sway_seat *seat,
 		struct wlr_pointer_hold_begin_event *event) {
 	// Start tracking gesture if there is a matching binding ...
@@ -1113,6 +1361,8 @@ static void handle_pinch_begin(struct sway_seat *seat,
 	if (gesture_binding_check(bindings, GESTURE_TYPE_PINCH, event->fingers, device)) {
 		struct seatop_default_event *seatop = seat->seatop_data;
 		gesture_tracker_begin(&seatop->gestures, GESTURE_TYPE_PINCH, event->fingers);
+	} else if (handle_scrollable_pinch_resize_begin(seat)) {
+		return;
 	} else {
 		// ... otherwise forward to client
 		struct sway_cursor *cursor = seat->cursor;
@@ -1129,6 +1379,8 @@ static void handle_pinch_update(struct sway_seat *seat,
 	if (gesture_tracker_check(&seatop->gestures, GESTURE_TYPE_PINCH)) {
 		gesture_tracker_update(&seatop->gestures, event->dx, event->dy,
 			event->scale, event->rotation);
+	} else if (handle_scrollable_pinch_resize_update(seat, event->scale)) {
+		return;
 	} else {
 		// ... otherwise forward to client
 		struct sway_cursor *cursor = seat->cursor;
@@ -1145,6 +1397,9 @@ static void handle_pinch_end(struct sway_seat *seat,
 	// Ensure that gesture is being tracked and was not cancelled
 	struct seatop_default_event *seatop = seat->seatop_data;
 	if (!gesture_tracker_check(&seatop->gestures, GESTURE_TYPE_PINCH)) {
+		if (handle_scrollable_pinch_resize_end(seat)) {
+			return;
+		}
 		struct sway_cursor *cursor = seat->cursor;
 		wlr_pointer_gestures_v1_send_pinch_end(
 			server.input->pointer_gestures, cursor->seat->wlr_seat,

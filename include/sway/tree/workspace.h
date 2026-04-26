@@ -115,6 +115,17 @@ void workspace_detect_urgent(struct sway_workspace *workspace);
 struct sway_container *workspace_get_focus_tiling_child(
 		struct sway_workspace *workspace, struct sway_seat *seat);
 
+int workspace_scroll_content_width(struct sway_workspace *ws);
+
+int workspace_scroll_max_offset(struct sway_workspace *ws);
+
+int workspace_scroll_clamp(struct sway_workspace *ws, int offset);
+
+int workspace_scroll_clamp_width(struct sway_workspace *ws, int width, int offset);
+
+int workspace_scroll_center_offset(struct sway_workspace *ws,
+		struct sway_seat *seat);
+
 void workspace_for_each_container(struct sway_workspace *ws,
 		void (*f)(struct sway_container *con, void *data), void *data);
 
