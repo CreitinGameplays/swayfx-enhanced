@@ -20,3 +20,5 @@ opt/
 scan_comments.py
 temp/
 todos/
+
+.codex
