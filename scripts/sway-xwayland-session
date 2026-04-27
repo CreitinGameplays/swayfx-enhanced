@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+
+# Start SwayFX with Xwayland ready from launch. These toolkit defaults make
+# common GUI apps prefer the X11 backend and therefore run through Xwayland.
+export GDK_BACKEND=x11
+export QT_QPA_PLATFORM=xcb
+export SDL_VIDEODRIVER=x11
+export CLUTTER_BACKEND=x11
+export MOZ_ENABLE_WAYLAND=0
+export ELECTRON_OZONE_PLATFORM_HINT=x11
+
+bindir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+if [ -x "$bindir/swayfx" ]; then
+	exec "$bindir/swayfx" "$@"
+fi
+
+exec "$bindir/sway" "$@"

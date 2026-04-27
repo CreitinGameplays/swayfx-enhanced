@@ -7,7 +7,7 @@ shopt -s inherit_errexit
 
 DEB_BUILD_GNU_TYPE=$(dpkg-architecture -q DEB_BUILD_GNU_TYPE)
 
-meson setup --prefix ${OPT_SWAYFX} "wlroots-${WLROOTSVERSION}/build/" "wlroots-${WLROOTSVERSION}"
+meson setup --prefix ${OPT_SWAYFX} -Dxwayland=enabled "wlroots-${WLROOTSVERSION}/build/" "wlroots-${WLROOTSVERSION}"
 ninja -C "wlroots-${WLROOTSVERSION}/build/"
 ninja -C "wlroots-${WLROOTSVERSION}/build/" install
 ls -l ${OPT_SWAYFX}/lib/${DEB_BUILD_GNU_TYPE}/pkgconfig
@@ -31,6 +31,12 @@ cat >${OPT_SWAYFX}/bin/swayfx.sh <<EOF
 #!/bin/sh
 export PATH=${OPT_SWAYFX}/bin:\${PATH}
 export LD_LIBRARY_PATH=\${LD_LIBRARY_PATH}:${OPT_SWAYFX}/lib/${DEB_BUILD_GNU_TYPE}/
+export GDK_BACKEND=x11
+export QT_QPA_PLATFORM=xcb
+export SDL_VIDEODRIVER=x11
+export CLUTTER_BACKEND=x11
+export MOZ_ENABLE_WAYLAND=0
+export ELECTRON_OZONE_PLATFORM_HINT=x11
 exec ${OPT_SWAYFX}/bin/swayfx
 EOF
 

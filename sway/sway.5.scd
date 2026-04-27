@@ -101,7 +101,7 @@ The following commands may only be used in the configuration file.
 	used. _enable_ will lazily load Xwayland so Xwayland will not be launched
 	until the first client attempts to connect. In some cases, such as slower
 	machines, it may be desirable to have Xwayland started immediately by
-	using _force_ instead of _enable_.
+	using _force_ instead of _enable_. This build defaults to _force_.
 
 ## Runtime only commands
 The following commands cannot be used directly in the configuration file.

@@ -129,6 +129,35 @@ A refractive glass effect that distorts the background.
 - `titlebar_separator <enable|disable>`: Show or hide the separator between the titlebar and window content.
 - `scratchpad_minimize <enable|disable>`: Treat hiding a window to the scratchpad as minimizing it.
 
+### Xwayland By Default
+This fork requires wlroots Xwayland support at build time, starts Xwayland immediately by default, and installs the default config with:
+
+```sway
+xwayland force
+```
+
+Display managers launch the session through `sway-xwayland-session`, which forces common GUI toolkits toward X11/Xwayland:
+
+```sh
+GDK_BACKEND=x11
+QT_QPA_PLATFORM=xcb
+SDL_VIDEODRIVER=x11
+CLUTTER_BACKEND=x11
+MOZ_ENABLE_WAYLAND=0
+ELECTRON_OZONE_PLATFORM_HINT=x11
+```
+
+Ways to check a running system:
+
+```bash
+swayfx-check-xwayland
+echo "$DISPLAY"
+pgrep -a Xwayland
+swaymsg -t get_tree | grep '"shell": "xwayland"'
+```
+
+If the final command has no output, launch an X11 test client first, such as `env GDK_BACKEND=x11 xeyes`, then run it again.
+
 ## Roadmap
 
 + Improve Liquid Glass stability and performance.

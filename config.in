@@ -53,6 +53,9 @@ liquid_glass_specular_opacity 0.4
 #
 # Read `man 5 sway` for a complete reference.
 
+# Start Xwayland immediately and export DISPLAY for X11 clients.
+xwayland force
+
 ### Variables
 #
 # Logo key. Use Mod1 for Alt.

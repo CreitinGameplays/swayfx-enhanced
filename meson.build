@@ -50,7 +50,7 @@ scenefx = dependency('scenefx-0.4', fallback: 'scenefx')
 wlroots_version = ['>=0.19.0', '<0.20.0']
 subproject(
 	'wlroots',
-	default_options: ['examples=false'],
+	default_options: ['examples=false', 'xwayland=enabled'],
 	required: false,
 	version: wlroots_version,
 )
@@ -65,6 +65,10 @@ foreach name, _ : wlroots_features
 	have = wlroots.get_variable(pkgconfig: var_name, internal: var_name) == 'true'
 	wlroots_features += { name: have }
 endforeach
+
+if not wlroots_features['xwayland']
+	error('This SwayFX-Enhanced build requires wlroots with Xwayland support enabled')
+endif
 
 null_dep = dependency('', required: false)
 
@@ -233,6 +237,13 @@ install_data(
 	install_dir: join_paths(datadir, 'wayland-sessions')
 )
 
+install_data(
+	'scripts/sway-xwayland-session',
+	'scripts/swayfx-check-xwayland',
+	install_dir: get_option('bindir'),
+	install_mode: 'rwxr-xr-x',
+)
+
 if get_option('default-wallpaper')
 	wallpaper_files = files(
 		'assets/Sway_Wallpaper_Blue_768x1024.png',
@@ -256,4 +267,3 @@ summary({
 	'tray': have_tray,
 	'man-pages': scdoc.found(),
 }, bool_yn: true)
-

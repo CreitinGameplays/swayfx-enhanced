@@ -1,0 +1,43 @@
+#!/bin/sh
+
+ok=1
+
+say() {
+	printf '%s\n' "$*"
+}
+
+check() {
+	label=$1
+	shift
+	if "$@" >/dev/null 2>&1; then
+		say "OK: $label"
+	else
+		say "FAIL: $label"
+		ok=0
+	fi
+}
+
+check "swaymsg can talk to the running compositor" swaymsg -t get_version
+
+if [ "${DISPLAY:-}" ]; then
+	say "OK: DISPLAY is set to $DISPLAY"
+else
+	say "FAIL: DISPLAY is not set"
+	ok=0
+fi
+
+if command -v pgrep >/dev/null 2>&1; then
+	check "Xwayland process is running" pgrep -x Xwayland
+else
+	say "SKIP: pgrep is not installed"
+fi
+
+tree=$(swaymsg -t get_tree 2>/dev/null || true)
+if printf '%s\n' "$tree" | grep -q '"shell": "xwayland"'; then
+	say "OK: at least one visible window is using shell=xwayland"
+else
+	say "INFO: no xwayland windows are visible yet"
+	say "      Run an X11 app, for example: env GDK_BACKEND=x11 xeyes"
+fi
+
+exit "$ok"
