@@ -81,7 +81,7 @@ sudo ninja -C build install
 This repo intentionally fails configuration if wlroots reports
 `have_xwayland=false`.
 
-## 4. Force Xwayland in the Sway config
+## 4. Start Xwayland from the Sway config
 
 The installed default config already contains:
 
@@ -94,6 +94,10 @@ If you use a personal config, add the same line near the top of:
 ```text
 ~/.config/sway/config
 ```
+
+This starts the Xwayland server for compatibility. It should not force
+Wayland-capable apps onto X11; the session launcher keeps toolkit defaults on
+Wayland and leaves Xwayland for X11-only apps or explicit overrides.
 
 ## 5. Verify at runtime
 

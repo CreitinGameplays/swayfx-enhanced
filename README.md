@@ -129,22 +129,23 @@ A refractive glass effect that distorts the background.
 - `titlebar_separator <enable|disable>`: Show or hide the separator between the titlebar and window content.
 - `scratchpad_minimize <enable|disable>`: Treat hiding a window to the scratchpad as minimizing it.
 
-### Xwayland By Default
+### Xwayland Compatibility
 This fork requires wlroots Xwayland support at build time, starts Xwayland immediately by default, and installs the default config with:
 
 ```sway
 xwayland force
 ```
 
-Display managers launch the session through `sway-xwayland-session`, which forces common GUI toolkits toward X11/Xwayland:
+Display managers launch the session through `sway-xwayland-session`, which keeps common GUI toolkits on native Wayland by default while leaving Xwayland available for X11-only apps:
 
 ```sh
-GDK_BACKEND=x11
-QT_QPA_PLATFORM=xcb
-SDL_VIDEODRIVER=x11
-CLUTTER_BACKEND=x11
-MOZ_ENABLE_WAYLAND=0
-ELECTRON_OZONE_PLATFORM_HINT=x11
+XDG_SESSION_TYPE=wayland
+GDK_BACKEND=wayland,x11
+QT_QPA_PLATFORM='wayland;xcb'
+SDL_VIDEODRIVER=wayland,x11
+CLUTTER_BACKEND=wayland
+MOZ_ENABLE_WAYLAND=1
+ELECTRON_OZONE_PLATFORM_HINT=wayland
 ```
 
 Ways to check a running system:
