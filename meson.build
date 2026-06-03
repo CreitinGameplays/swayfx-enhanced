@@ -39,14 +39,7 @@ if is_freebsd
 	add_project_arguments('-D_C11_SOURCE', language: 'c')
 endif
 
-# Execute the scenefx subproject, if any
-subproject(
-	'scenefx',
-	required: false,
-)
-scenefx = dependency('scenefx-0.4', fallback: 'scenefx')
-
-# Execute the wlroots subproject, if any
+# Execute the wlroots subproject FIRST so it overrides the system package
 wlroots_version = ['>=0.19.0', '<0.20.0']
 subproject(
 	'wlroots',
@@ -55,6 +48,13 @@ subproject(
 	version: wlroots_version,
 )
 wlroots = dependency('wlroots-0.19', version: wlroots_version, fallback: 'wlroots')
+
+# NOW execute the scenefx subproject, which will safely use the bundled wlroots
+subproject(
+	'scenefx',
+	required: false,
+)
+scenefx = dependency('scenefx-0.4', fallback: 'scenefx')
 wlroots_features = {
 	'xwayland': false,
 	'libinput_backend': false,
