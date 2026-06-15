@@ -70,6 +70,14 @@ static bool full_output_layer_overlay_at(struct wlr_scene_tree *tree,
 	return false;
 }
 
+static bool full_output_overlay_surface_at(double lx, double ly,
+		struct wlr_surface **wlr_surface, double *sx, double *sy) {
+	return full_output_layer_overlay_at(root->layers.shell_overlay,
+			lx, ly, wlr_surface, sx, sy) ||
+		full_output_layer_overlay_at(root->layers.shell_top,
+			lx, ly, wlr_surface, sx, sy);
+}
+
 /**
  * Returns the node at the cursor's position. If there is a surface at that
  * location, it is stored in **surface (it may not be a view).
@@ -112,6 +120,22 @@ struct sway_node *node_at_coords(
 
 			if (scene_surface) {
 				*surface = scene_surface->surface;
+			}
+		}
+
+		// Full-output overlays should capture input ahead of lower layers,
+		// even if the scene hit-test can still resolve something beneath them.
+		struct wlr_layer_surface_v1 *layer_surface =
+			toplevel_layer_surface_from_surface(*surface);
+		if (!layer_surface || !layer_surface_is_full_output_overlay(layer_surface)) {
+			struct wlr_surface *overlay_surface = NULL;
+			double overlay_sx, overlay_sy;
+			if (full_output_overlay_surface_at(lx, ly,
+					&overlay_surface, &overlay_sx, &overlay_sy)) {
+				*surface = overlay_surface;
+				*sx = overlay_sx;
+				*sy = overlay_sy;
+				return NULL;
 			}
 		}
 
@@ -159,6 +183,10 @@ struct sway_node *node_at_coords(
 
 			current = &current->parent->node;
 		}
+	}
+
+	if (full_output_overlay_surface_at(lx, ly, surface, sx, sy)) {
+		return NULL;
 	}
 
 	// if we aren't on a container, determine what workspace we are on
