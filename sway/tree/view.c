@@ -1012,7 +1012,7 @@ void view_map(struct sway_view *view, struct wlr_surface *wlr_surface,
 	}
 
 	struct wlr_box full_output_overlay_box = {0};
-	bool full_output_overlay = !fullscreen &&
+	bool full_output_overlay =
 		view_would_join_tabbed_or_stacked(ws, target_sibling) &&
 		view_get_full_output_overlay_box(view, ws, &full_output_overlay_box);
 	if (full_output_overlay ||
@@ -1023,6 +1023,9 @@ void view_map(struct sway_view *view, struct wlr_surface *wlr_surface,
 		if (full_output_overlay) {
 			configure_full_output_overlay(view->container,
 				&full_output_overlay_box);
+			if (fullscreen && view->impl->set_fullscreen) {
+				view->impl->set_fullscreen(view, true);
+			}
 		}
 	} else {
 		view->container->pending.border = config->border;
@@ -1043,7 +1046,7 @@ void view_map(struct sway_view *view, struct wlr_surface *wlr_surface,
 	view_update_title(view, false);
 	container_update_representation(container);
 
-	if (fullscreen) {
+	if (fullscreen && !full_output_overlay) {
 		container_set_fullscreen(view->container, true);
 		arrange_workspace(view->container->pending.workspace);
 	} else {
@@ -1056,7 +1059,7 @@ void view_map(struct sway_view *view, struct wlr_surface *wlr_surface,
 
 	view_execute_criteria(view);
 
-	bool set_focus = full_output_overlay || should_focus(view);
+	bool set_focus = fullscreen || full_output_overlay || should_focus(view);
 
 #if WLR_HAS_XWAYLAND
 	struct wlr_xwayland_surface *xsurface;
