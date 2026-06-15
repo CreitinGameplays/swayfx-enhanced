@@ -291,6 +291,35 @@ static bool layer_tree_has_full_output_overlay(struct wlr_scene_tree *tree,
 	return false;
 }
 
+bool layer_surface_is_full_output_overlay(struct wlr_layer_surface_v1 *layer_surface) {
+	if (!layer_surface || !layer_surface->data || !layer_surface->output) {
+		return false;
+	}
+
+	struct sway_layer_surface *surface = layer_surface->data;
+	struct sway_output *output = layer_surface->output->data;
+	if (!output) {
+		return false;
+	}
+
+	struct wlr_box output_box;
+	output_get_box(output, &output_box);
+	if (layer_surface_covers_box(surface, &output_box)) {
+		return true;
+	}
+
+	struct sway_workspace *ws = output_get_active_workspace(output);
+	if (ws) {
+		struct wlr_box workspace_box;
+		workspace_get_box(ws, &workspace_box);
+		if (layer_surface_covers_box(surface, &workspace_box)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 bool workspace_has_full_output_layer_overlay(struct sway_workspace *ws) {
 	if (!ws || !ws->output) {
 		return false;
