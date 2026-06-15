@@ -23,6 +23,21 @@
 #include "sway/tree/view.h"
 #include "sway/tree/workspace.h"
 
+void wlr_xwayland_surface_force_override_redirect_focus(
+	struct wlr_xwayland_surface *xsurface, bool focus) __attribute__((weak));
+
+static void xwayland_surface_set_focus(struct wlr_xwayland_surface *xsurface,
+		bool focus) {
+	if (!xsurface->override_redirect) {
+		wlr_xwayland_surface_activate(xsurface, focus);
+		return;
+	}
+
+	if (wlr_xwayland_surface_force_override_redirect_focus) {
+		wlr_xwayland_surface_force_override_redirect_focus(xsurface, focus);
+	}
+}
+
 static const char *atom_map[ATOM_LAST] = {
 	[NET_WM_WINDOW_TYPE_NORMAL] = "_NET_WM_WINDOW_TYPE_NORMAL",
 	[NET_WM_WINDOW_TYPE_DIALOG] = "_NET_WM_WINDOW_TYPE_DIALOG",
@@ -93,11 +108,7 @@ void sway_xwayland_surface_focus(struct wlr_xwayland_surface *xsurface,
 	struct sway_seat *seat;
 	wl_list_for_each(seat, &server.input->seats, link) {
 		wlr_xwayland_set_seat(server.xwayland.wlr_xwayland, seat->wlr_seat);
-		if (xsurface->override_redirect) {
-			wlr_xwayland_surface_force_override_redirect_focus(xsurface, true);
-		} else {
-			wlr_xwayland_surface_activate(xsurface, true);
-		}
+		xwayland_surface_set_focus(xsurface, true);
 		seat_set_focus_surface(seat, xsurface->surface, unfocus);
 	}
 }
@@ -162,11 +173,7 @@ static void unmanaged_handle_unmap(struct wl_listener *listener, void *data) {
 
 	struct sway_seat *seat = input_manager_current_seat();
 	if (seat->wlr_seat->keyboard_state.focused_surface == xsurface->surface) {
-		if (xsurface->override_redirect) {
-			wlr_xwayland_surface_force_override_redirect_focus(xsurface, false);
-		} else {
-			wlr_xwayland_surface_activate(xsurface, false);
-		}
+		xwayland_surface_set_focus(xsurface, false);
 
 		// This simply returns focus to the parent surface if there's one available.
 		// This seems to handle JetBrains issues.
