@@ -17,6 +17,8 @@ result
 # ignore the build output from build.sh
 opt/
 
+logs/
+
 scan_comments.py
 temp/
 todos/
