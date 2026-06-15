@@ -1358,6 +1358,9 @@ void seat_set_focus_layer(struct sway_seat *seat,
 		seat->has_exclusive_layer = true;
 	}
 	if (seat->focused_layer == layer) {
+		if (seat->wlr_seat->keyboard_state.focused_surface != layer->surface) {
+			seat_set_focus_surface(seat, layer->surface, true);
+		}
 		return;
 	}
 	seat_set_focus_surface(seat, layer->surface, true);
