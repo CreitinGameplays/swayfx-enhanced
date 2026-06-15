@@ -38,6 +38,38 @@ static uint32_t get_current_time_msec(void) {
 	return now.tv_sec * 1000 + now.tv_nsec / 1000000;
 }
 
+static bool full_output_layer_overlay_at(struct wlr_scene_tree *tree,
+		double lx, double ly, struct wlr_surface **wlr_surface,
+		double *sx, double *sy) {
+	struct wlr_scene_node *node;
+	wl_list_for_each_reverse(node, &tree->children, link) {
+		struct sway_layer_surface *surface = scene_descriptor_try_get(node,
+			SWAY_SCENE_DESC_LAYER_SHELL);
+		if (!surface || !layer_surface_is_full_output_overlay(surface->layer_surface)) {
+			continue;
+		}
+
+		int surface_lx, surface_ly;
+		wlr_scene_node_coords(&surface->scene->tree->node,
+			&surface_lx, &surface_ly);
+		double local_sx = lx - surface_lx;
+		double local_sy = ly - surface_ly;
+		struct wlr_surface *layer_surface = surface->layer_surface->surface;
+		if (local_sx < 0 || local_sy < 0 ||
+				local_sx >= layer_surface->current.width ||
+				local_sy >= layer_surface->current.height) {
+			continue;
+		}
+
+		*wlr_surface = layer_surface;
+		*sx = local_sx;
+		*sy = local_sy;
+		return true;
+	}
+
+	return false;
+}
+
 /**
  * Returns the node at the cursor's position. If there is a surface at that
  * location, it is stored in **surface (it may not be a view).
@@ -60,6 +92,13 @@ struct sway_node *node_at_coords(
 		scene_node = wlr_scene_node_at(&layer->node, lx, ly, sx, sy);
 		if (scene_node) {
 			break;
+		}
+
+		if ((layer == root->layers.shell_overlay ||
+				layer == root->layers.shell_top) &&
+				full_output_layer_overlay_at(layer, lx, ly,
+					surface, sx, sy)) {
+			return NULL;
 		}
 	}
 

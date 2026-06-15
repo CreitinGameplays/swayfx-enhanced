@@ -1351,11 +1351,11 @@ void seat_set_focus_layer(struct sway_seat *seat,
 		seat->has_exclusive_layer = false;
 		return;
 	}
-	seat->has_exclusive_layer =
-		layer->current.layer >= ZWLR_LAYER_SHELL_V1_LAYER_TOP &&
-		layer->current.keyboard_interactive
-			== ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE &&
-		!layer_surface_is_full_output_overlay(layer);
+	if (layer->current.layer >= ZWLR_LAYER_SHELL_V1_LAYER_TOP &&
+			layer->current.keyboard_interactive
+			== ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE) {
+		seat->has_exclusive_layer = true;
+	}
 	if (seat->focused_layer == layer) {
 		return;
 	}
