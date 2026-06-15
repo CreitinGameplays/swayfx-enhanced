@@ -176,8 +176,7 @@ static bool layer_surface_is_keyboard_focusable(
 		layer_surface->current.layer >= ZWLR_LAYER_SHELL_V1_LAYER_TOP &&
 		(layer_surface->current.keyboard_interactive !=
 			ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE ||
-			layer_surface->current.layer == ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY ||
-			layer_surface_is_full_output_overlay(layer_surface));
+			layer_surface_should_retain_focus(layer_surface));
 }
 
 static bool layer_surface_should_force_focus(
@@ -185,7 +184,7 @@ static bool layer_surface_should_force_focus(
 	return layer_surface_is_keyboard_focusable(layer_surface) &&
 		(layer_surface->current.keyboard_interactive ==
 			ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE ||
-			layer_surface_is_full_output_overlay(layer_surface));
+			layer_surface_should_retain_focus(layer_surface));
 }
 
 void arrange_layers(struct sway_output *output) {

@@ -1043,8 +1043,8 @@ static void arrange_root(struct sway_root *root) {
 			wlr_scene_node_reparent(&output->layers.blur_layer->node, root->layers.blur_tree);
 			wlr_scene_node_reparent(&output->layers.tiling->node, root->layers.tiling);
 			wlr_scene_node_reparent(&output->layers.shell_top->node, root->layers.shell_top);
-			wlr_scene_node_reparent(&output->layers.shell_overlay->node, root->layers.shell_overlay);
 			wlr_scene_node_reparent(&output->layers.fullscreen->node, root->layers.fullscreen);
+			wlr_scene_node_reparent(&output->layers.shell_overlay->node, root->layers.shell_overlay);
 			wlr_scene_node_reparent(&output->layers.session_lock->node, root->layers.session_lock);
 
 			wlr_scene_node_set_position(&output->layers.shell_background->node, output->lx, output->ly);

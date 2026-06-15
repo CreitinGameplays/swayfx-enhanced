@@ -98,6 +98,41 @@ static bool full_output_overlay_surface_at(double lx, double ly,
 			lx, ly, wlr_surface, sx, sy);
 }
 
+static bool retained_layer_surface_at(struct wlr_scene_tree *tree,
+		double lx, double ly, struct wlr_surface **wlr_surface,
+		double *sx, double *sy) {
+	struct wlr_scene_node *node;
+	wl_list_for_each_reverse(node, &tree->children, link) {
+		struct sway_layer_surface *surface = scene_descriptor_try_get(node,
+			SWAY_SCENE_DESC_LAYER_SHELL);
+		if (!surface && node->type == WLR_SCENE_NODE_TREE &&
+				retained_layer_surface_at(wlr_scene_tree_from_node(node),
+					lx, ly, wlr_surface, sx, sy)) {
+			return true;
+		}
+
+		if (!surface ||
+				!layer_surface_should_retain_focus(surface->layer_surface)) {
+			continue;
+		}
+
+		if (layer_surface_at(surface->layer_surface, lx, ly,
+				wlr_surface, sx, sy)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static bool retained_overlay_surface_at(double lx, double ly,
+		struct wlr_surface **wlr_surface, double *sx, double *sy) {
+	return retained_layer_surface_at(root->layers.shell_overlay,
+			lx, ly, wlr_surface, sx, sy) ||
+		retained_layer_surface_at(root->layers.shell_top,
+			lx, ly, wlr_surface, sx, sy);
+}
+
 /**
  * Returns the node at the cursor's position. If there is a surface at that
  * location, it is stored in **surface (it may not be a view).
@@ -107,8 +142,7 @@ struct sway_node *node_at_coords(
 		struct wlr_surface **surface, double *sx, double *sy) {
 	struct wlr_scene_node *scene_node = NULL;
 
-	if (seat && layer_surface_should_retain_focus(seat->focused_layer) &&
-			layer_surface_at(seat->focused_layer, lx, ly, surface, sx, sy)) {
+	if (retained_overlay_surface_at(lx, ly, surface, sx, sy)) {
 		return NULL;
 	}
 
