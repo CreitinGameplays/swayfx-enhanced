@@ -70,10 +70,9 @@ static bool xwayland_surface_covers_box(struct wlr_xwayland_surface *xsurface,
 		intersection.height >= box->height - 2;
 }
 
-bool sway_xwayland_surface_is_fullscreen_overlay(
+static bool xwayland_surface_has_fullscreen_overlay_geometry(
 		struct wlr_xwayland_surface *xsurface) {
-	if (!xsurface || !xsurface->surface || !xsurface->surface->mapped ||
-			xsurface->width <= 0 || xsurface->height <= 0) {
+	if (!xsurface || xsurface->width <= 0 || xsurface->height <= 0) {
 		return false;
 	}
 
@@ -96,6 +95,12 @@ bool sway_xwayland_surface_is_fullscreen_overlay(
 	}
 
 	return false;
+}
+
+bool sway_xwayland_surface_is_fullscreen_overlay(
+		struct wlr_xwayland_surface *xsurface) {
+	return xsurface && xsurface->surface && xsurface->surface->mapped &&
+		xwayland_surface_has_fullscreen_overlay_geometry(xsurface);
 }
 
 void sway_xwayland_surface_focus(struct wlr_xwayland_surface *xsurface,
@@ -131,10 +136,17 @@ static void unmanaged_handle_set_geometry(struct wl_listener *listener, void *da
 	wlr_scene_node_set_position(&surface->surface_scene->buffer->node, xsurface->x, xsurface->y);
 }
 
+static bool unmanaged_promote_fullscreen_overlay(
+	struct sway_xwayland_unmanaged *surface);
+
 static void unmanaged_handle_map(struct wl_listener *listener, void *data) {
 	struct sway_xwayland_unmanaged *surface =
 		wl_container_of(listener, surface, map);
 	struct wlr_xwayland_surface *xsurface = surface->wlr_xwayland_surface;
+
+	if (unmanaged_promote_fullscreen_overlay(surface)) {
+		return;
+	}
 
 	surface->surface_scene = wlr_scene_surface_create(root->layers.unmanaged,
 		xsurface->surface);
@@ -245,6 +257,23 @@ static void handle_map(struct wl_listener *listener, void *data);
 static void handle_associate(struct wl_listener *listener, void *data);
 
 struct sway_xwayland_view *create_xwayland_view(struct wlr_xwayland_surface *xsurface);
+
+static bool unmanaged_promote_fullscreen_overlay(
+		struct sway_xwayland_unmanaged *surface) {
+	struct wlr_xwayland_surface *xsurface = surface->wlr_xwayland_surface;
+	if (!xwayland_surface_has_fullscreen_overlay_geometry(xsurface)) {
+		return false;
+	}
+
+	unmanaged_handle_dissociate(&surface->dissociate, NULL);
+	unmanaged_handle_destroy(&surface->destroy, NULL);
+	xsurface->data = NULL;
+
+	struct sway_xwayland_view *xwayland_view = create_xwayland_view(xsurface);
+	handle_associate(&xwayland_view->associate, NULL);
+	handle_map(&xwayland_view->map, xsurface);
+	return true;
+}
 
 static void unmanaged_handle_override_redirect(struct wl_listener *listener, void *data) {
 	struct sway_xwayland_unmanaged *surface =
@@ -373,7 +402,7 @@ static void set_activated(struct sway_view *view, bool activated) {
 		wlr_xwayland_surface_set_minimized(surface, false);
 	}
 
-	wlr_xwayland_surface_activate(surface, activated);
+	xwayland_surface_set_focus(surface, activated);
 }
 
 static void set_tiled(struct sway_view *view, bool tiled) {
@@ -641,6 +670,11 @@ static void handle_override_redirect(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, xwayland_view, override_redirect);
 	struct sway_view *view = &xwayland_view->view;
 	struct wlr_xwayland_surface *xsurface = view->wlr_xwayland_surface;
+
+	if (!xsurface->override_redirect ||
+			xwayland_surface_has_fullscreen_overlay_geometry(xsurface)) {
+		return;
+	}
 
 	bool associated = xsurface->surface != NULL;
 	bool mapped = associated && xsurface->surface->mapped;
@@ -987,7 +1021,8 @@ struct sway_xwayland_view *create_xwayland_view(struct wlr_xwayland_surface *xsu
 void handle_xwayland_surface(struct wl_listener *listener, void *data) {
 	struct wlr_xwayland_surface *xsurface = data;
 
-	if (xsurface->override_redirect) {
+	if (xsurface->override_redirect &&
+			!xwayland_surface_has_fullscreen_overlay_geometry(xsurface)) {
 		sway_log(SWAY_DEBUG, "New xwayland unmanaged surface");
 		create_unmanaged(xsurface);
 		return;
