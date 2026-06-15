@@ -442,8 +442,7 @@ static void handle_key_event(struct sway_keyboard *keyboard,
 	seat_idle_notify_activity(seat, IDLE_SOURCE_KEYBOARD);
 	bool locked = server.session_lock.lock;
 
-	if (seat->focused_layer &&
-			layer_surface_is_full_output_overlay(seat->focused_layer) &&
+	if (layer_surface_should_retain_focus(seat->focused_layer) &&
 			wlr_seat->keyboard_state.focused_surface !=
 				seat->focused_layer->surface) {
 		seat_set_focus_layer(seat, seat->focused_layer);

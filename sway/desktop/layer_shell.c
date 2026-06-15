@@ -176,6 +176,7 @@ static bool layer_surface_is_keyboard_focusable(
 		layer_surface->current.layer >= ZWLR_LAYER_SHELL_V1_LAYER_TOP &&
 		(layer_surface->current.keyboard_interactive !=
 			ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE ||
+			layer_surface->current.layer == ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY ||
 			layer_surface_is_full_output_overlay(layer_surface));
 }
 
@@ -241,9 +242,10 @@ void arrange_layers(struct sway_output *output) {
 			seat_set_focus_layer(seat, topmost->layer_surface);
 		} else if (seat->focused_layer &&
 				seat->focused_layer->output == output->wlr_output &&
-				!layer_surface_is_keyboard_focusable(seat->focused_layer)) {
-			// Preserve focus for interactive overlays. Only clear it once the
-			// focused layer stops being keyboard-focusable.
+				!layer_surface_is_keyboard_focusable(seat->focused_layer) &&
+				!layer_surface_should_retain_focus(seat->focused_layer)) {
+			// Preserve focus for retained overlays. Only clear it once the
+			// focused layer is no longer eligible to own input.
 			seat_set_focus_layer(seat, NULL);
 		}
 	}
@@ -336,6 +338,12 @@ bool layer_surface_is_full_output_overlay(struct wlr_layer_surface_v1 *layer_sur
 	}
 
 	return false;
+}
+
+bool layer_surface_should_retain_focus(struct wlr_layer_surface_v1 *layer_surface) {
+	return layer_surface && layer_surface->surface &&
+		layer_surface->surface->mapped &&
+		layer_surface->current.layer >= ZWLR_LAYER_SHELL_V1_LAYER_TOP;
 }
 
 bool workspace_has_full_output_layer_overlay(struct sway_workspace *ws) {

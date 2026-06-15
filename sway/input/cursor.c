@@ -38,6 +38,32 @@ static uint32_t get_current_time_msec(void) {
 	return now.tv_sec * 1000 + now.tv_nsec / 1000000;
 }
 
+static bool layer_surface_at(struct wlr_layer_surface_v1 *layer_surface,
+		double lx, double ly, struct wlr_surface **wlr_surface,
+		double *sx, double *sy) {
+	if (!layer_surface || !layer_surface->data ||
+			!layer_surface->surface || !layer_surface->surface->mapped) {
+		return false;
+	}
+
+	struct sway_layer_surface *surface = layer_surface->data;
+	int surface_lx, surface_ly;
+	wlr_scene_node_coords(&surface->scene->tree->node,
+		&surface_lx, &surface_ly);
+	double local_sx = lx - surface_lx;
+	double local_sy = ly - surface_ly;
+	if (local_sx < 0 || local_sy < 0 ||
+			local_sx >= layer_surface->surface->current.width ||
+			local_sy >= layer_surface->surface->current.height) {
+		return false;
+	}
+
+	*wlr_surface = layer_surface->surface;
+	*sx = local_sx;
+	*sy = local_sy;
+	return true;
+}
+
 static bool full_output_layer_overlay_at(struct wlr_scene_tree *tree,
 		double lx, double ly, struct wlr_surface **wlr_surface,
 		double *sx, double *sy) {
@@ -55,22 +81,10 @@ static bool full_output_layer_overlay_at(struct wlr_scene_tree *tree,
 			continue;
 		}
 
-		int surface_lx, surface_ly;
-		wlr_scene_node_coords(&surface->scene->tree->node,
-			&surface_lx, &surface_ly);
-		double local_sx = lx - surface_lx;
-		double local_sy = ly - surface_ly;
-		struct wlr_surface *layer_surface = surface->layer_surface->surface;
-		if (local_sx < 0 || local_sy < 0 ||
-				local_sx >= layer_surface->current.width ||
-				local_sy >= layer_surface->current.height) {
-			continue;
+		if (layer_surface_at(surface->layer_surface, lx, ly,
+				wlr_surface, sx, sy)) {
+			return true;
 		}
-
-		*wlr_surface = layer_surface;
-		*sx = local_sx;
-		*sy = local_sy;
-		return true;
 	}
 
 	return false;
@@ -92,6 +106,11 @@ struct sway_node *node_at_coords(
 		struct sway_seat *seat, double lx, double ly,
 		struct wlr_surface **surface, double *sx, double *sy) {
 	struct wlr_scene_node *scene_node = NULL;
+
+	if (seat && layer_surface_should_retain_focus(seat->focused_layer) &&
+			layer_surface_at(seat->focused_layer, lx, ly, surface, sx, sy)) {
+		return NULL;
+	}
 
 	struct wlr_scene_node *node;
 	wl_list_for_each_reverse(node, &root->layer_tree->children, link) {

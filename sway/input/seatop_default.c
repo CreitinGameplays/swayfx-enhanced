@@ -654,6 +654,15 @@ static void check_focus_follows_mouse(struct sway_seat *seat,
 		struct seatop_default_event *e, struct sway_node *hovered_node) {
 	struct sway_node *focus = seat_get_focus(seat);
 
+	if (layer_surface_should_retain_focus(seat->focused_layer)) {
+		if (seat->wlr_seat->keyboard_state.focused_surface !=
+				seat->focused_layer->surface) {
+			seat_set_focus_layer(seat, seat->focused_layer);
+			transaction_commit_dirty();
+		}
+		return;
+	}
+
 	// This is the case if a layer-shell surface is hovered.
 	// If it's on another output, focus the active workspace there.
 	if (!hovered_node) {
