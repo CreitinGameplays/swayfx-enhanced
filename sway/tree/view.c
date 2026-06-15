@@ -1056,11 +1056,12 @@ void view_map(struct sway_view *view, struct wlr_surface *wlr_surface,
 
 	view_execute_criteria(view);
 
-	bool set_focus = should_focus(view);
+	bool set_focus = full_output_overlay || should_focus(view);
 
 #if WLR_HAS_XWAYLAND
 	struct wlr_xwayland_surface *xsurface;
-	if ((xsurface = wlr_xwayland_surface_try_from_wlr_surface(wlr_surface))) {
+	if (!full_output_overlay &&
+			(xsurface = wlr_xwayland_surface_try_from_wlr_surface(wlr_surface))) {
 		set_focus &= wlr_xwayland_surface_icccm_input_model(xsurface) !=
 				WLR_ICCCM_INPUT_MODEL_NONE;
 	}

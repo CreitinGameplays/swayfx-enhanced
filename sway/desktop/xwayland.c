@@ -6,6 +6,7 @@
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_xdg_activation_v1.h>
+#include <wlr/util/box.h>
 #include <wlr/xwayland.h>
 #include <xcb/xcb_icccm.h>
 #include "log.h"
@@ -17,6 +18,7 @@
 #include "sway/scene_descriptor.h"
 #include "sway/tree/arrange.h"
 #include "sway/tree/container.h"
+#include "sway/tree/root.h"
 #include "sway/server.h"
 #include "sway/tree/view.h"
 #include "sway/tree/workspace.h"
@@ -34,6 +36,66 @@ static const char *atom_map[ATOM_LAST] = {
 	[NET_WM_WINDOW_TYPE_NOTIFICATION] = "_NET_WM_WINDOW_TYPE_NOTIFICATION",
 	[NET_WM_STATE_MODAL] = "_NET_WM_STATE_MODAL",
 };
+
+static bool xwayland_surface_covers_box(struct wlr_xwayland_surface *xsurface,
+		struct wlr_box *box) {
+	if (box->width <= 0 || box->height <= 0) {
+		return false;
+	}
+
+	struct wlr_box surface_box = {
+		.x = xsurface->x,
+		.y = xsurface->y,
+		.width = xsurface->width,
+		.height = xsurface->height,
+	};
+	struct wlr_box intersection;
+	return wlr_box_intersection(&intersection, &surface_box, box) &&
+		intersection.width >= box->width - 2 &&
+		intersection.height >= box->height - 2;
+}
+
+bool sway_xwayland_surface_is_fullscreen_overlay(
+		struct wlr_xwayland_surface *xsurface) {
+	if (!xsurface || !xsurface->surface || !xsurface->surface->mapped ||
+			xsurface->width <= 0 || xsurface->height <= 0) {
+		return false;
+	}
+
+	for (int i = 0; i < root->outputs->length; ++i) {
+		struct sway_output *output = root->outputs->items[i];
+		struct wlr_box output_box;
+		output_get_box(output, &output_box);
+		if (xwayland_surface_covers_box(xsurface, &output_box)) {
+			return true;
+		}
+
+		struct sway_workspace *ws = output_get_active_workspace(output);
+		if (ws) {
+			struct wlr_box workspace_box;
+			workspace_get_box(ws, &workspace_box);
+			if (xwayland_surface_covers_box(xsurface, &workspace_box)) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+void sway_xwayland_surface_focus(struct wlr_xwayland_surface *xsurface,
+		bool unfocus) {
+	if (!xsurface || !xsurface->surface || !xsurface->surface->mapped ||
+			!server.xwayland.wlr_xwayland) {
+		return;
+	}
+
+	struct sway_seat *seat;
+	wl_list_for_each(seat, &server.input->seats, link) {
+		wlr_xwayland_set_seat(server.xwayland.wlr_xwayland, seat->wlr_seat);
+		seat_set_focus_surface(seat, xsurface->surface, unfocus);
+	}
+}
 
 static void unmanaged_handle_request_configure(struct wl_listener *listener,
 		void *data) {
@@ -71,12 +133,14 @@ static void unmanaged_handle_map(struct wl_listener *listener, void *data) {
 		surface->set_geometry.notify = unmanaged_handle_set_geometry;
 	}
 
-	if (wlr_xwayland_surface_override_redirect_wants_focus(xsurface)) {
-		struct sway_seat *seat = input_manager_current_seat();
-		struct wlr_xwayland *xwayland = server.xwayland.wlr_xwayland;
-		wlr_xwayland_set_seat(xwayland, seat->wlr_seat);
-		seat_set_focus_surface(seat, xsurface->surface, false);
+	bool fullscreen_overlay =
+		sway_xwayland_surface_is_fullscreen_overlay(xsurface);
+	if (fullscreen_overlay ||
+			wlr_xwayland_surface_override_redirect_wants_focus(xsurface)) {
+		sway_xwayland_surface_focus(xsurface, fullscreen_overlay);
 	}
+
+	cursor_rebase_all();
 }
 
 static void unmanaged_handle_unmap(struct wl_listener *listener, void *data) {
@@ -118,13 +182,16 @@ static void unmanaged_handle_request_activate(struct wl_listener *listener, void
 	if (xsurface->surface == NULL || !xsurface->surface->mapped) {
 		return;
 	}
+	bool fullscreen_overlay =
+		sway_xwayland_surface_is_fullscreen_overlay(xsurface);
 	struct sway_seat *seat = input_manager_current_seat();
 	struct sway_container *focus = seat_get_focused_container(seat);
-	if (focus && focus->view && focus->view->pid != xsurface->pid) {
+	if (!fullscreen_overlay && focus && focus->view &&
+			focus->view->pid != xsurface->pid) {
 		return;
 	}
 
-	seat_set_focus_surface(seat, xsurface->surface, false);
+	sway_xwayland_surface_focus(xsurface, fullscreen_overlay);
 }
 
 static void unmanaged_handle_associate(struct wl_listener *listener, void *data) {

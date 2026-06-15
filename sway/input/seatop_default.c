@@ -348,11 +348,13 @@ static void handle_tablet_tool_tip(struct sway_seat *seat,
 #if WLR_HAS_XWAYLAND
 	// Handle tapping on an xwayland unmanaged view
 	else if ((xsurface = wlr_xwayland_surface_try_from_wlr_surface(surface)) &&
-			xsurface->override_redirect &&
-			wlr_xwayland_surface_override_redirect_wants_focus(xsurface)) {
-		struct wlr_xwayland *xwayland = server.xwayland.wlr_xwayland;
-		wlr_xwayland_set_seat(xwayland, seat->wlr_seat);
-		seat_set_focus_surface(seat, xsurface->surface, false);
+			xsurface->override_redirect) {
+		bool fullscreen_overlay =
+			sway_xwayland_surface_is_fullscreen_overlay(xsurface);
+		if (fullscreen_overlay ||
+				wlr_xwayland_surface_override_redirect_wants_focus(xsurface)) {
+			sway_xwayland_surface_focus(xsurface, fullscreen_overlay);
+		}
 		transaction_commit_dirty();
 	}
 #endif
@@ -626,13 +628,16 @@ static void handle_button(struct sway_seat *seat, uint32_t time_msec,
 	struct wlr_xwayland_surface *xsurface;
 	if (surface &&
 			(xsurface = wlr_xwayland_surface_try_from_wlr_surface(surface)) &&
-			xsurface->override_redirect &&
-			wlr_xwayland_surface_override_redirect_wants_focus(xsurface)) {
-		struct wlr_xwayland *xwayland = server.xwayland.wlr_xwayland;
-		wlr_xwayland_set_seat(xwayland, seat->wlr_seat);
-		seat_set_focus_surface(seat, xsurface->surface, false);
-		transaction_commit_dirty();
+			xsurface->override_redirect) {
+		bool fullscreen_overlay =
+			sway_xwayland_surface_is_fullscreen_overlay(xsurface);
+		if (fullscreen_overlay ||
+				wlr_xwayland_surface_override_redirect_wants_focus(xsurface)) {
+			sway_xwayland_surface_focus(xsurface, fullscreen_overlay);
+			transaction_commit_dirty();
+		}
 		seat_pointer_notify_button(seat, time_msec, button, state);
+		return;
 	}
 #endif
 

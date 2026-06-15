@@ -1,6 +1,7 @@
 #ifndef SWAY_XWAYLAND_H
 #define SWAY_XWAYLAND_H
 
+#include <stdbool.h>
 #include <wlr/xwayland.h>
 #include <xcb/xproto.h>
 
@@ -27,5 +28,10 @@ struct sway_xwayland {
 };
 
 void handle_xwayland_ready(struct wl_listener *listener, void *data);
+
+bool sway_xwayland_surface_is_fullscreen_overlay(
+	struct wlr_xwayland_surface *xsurface);
+void sway_xwayland_surface_focus(struct wlr_xwayland_surface *xsurface,
+	bool unfocus);
 
 #endif
