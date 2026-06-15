@@ -676,6 +676,60 @@ static struct sway_workspace *select_workspace(struct sway_view *view) {
 	return NULL;
 }
 
+static bool view_get_full_output_overlay_box(struct sway_view *view,
+		struct sway_workspace *ws, struct wlr_box *box) {
+	if (!ws || !ws->output || view->natural_width <= 0 ||
+			view->natural_height <= 0) {
+		return false;
+	}
+
+	struct wlr_box output_box;
+	output_get_box(ws->output, &output_box);
+	if (view->natural_width >= output_box.width &&
+			view->natural_height >= output_box.height) {
+		*box = output_box;
+		return true;
+	}
+
+	struct wlr_box workspace_box;
+	workspace_get_box(ws, &workspace_box);
+	if (view->natural_width >= workspace_box.width &&
+			view->natural_height >= workspace_box.height) {
+		*box = workspace_box;
+		return true;
+	}
+
+	return false;
+}
+
+// Screenshot tools often map an output-sized xdg toplevel instead of using
+// layer-shell or protocol fullscreen. Do not let tabbed/stacked layouts shrink
+// those capture overlays into a tab.
+static bool view_would_join_tabbed_or_stacked(struct sway_workspace *ws,
+		struct sway_container *target_sibling) {
+	if (!target_sibling) {
+		return false;
+	}
+	if (ws && (ws->layout == L_TABBED || ws->layout == L_STACKED)) {
+		return true;
+	}
+	enum sway_container_layout layout =
+		container_parent_layout(target_sibling);
+	return layout == L_TABBED || layout == L_STACKED;
+}
+
+static void configure_full_output_overlay(struct sway_container *con,
+		struct wlr_box *box) {
+	con->pending.border = B_NONE;
+	con->pending.border_thickness = 0;
+	con->pending.content_x = box->x;
+	con->pending.content_y = box->y;
+	con->pending.content_width = box->width;
+	con->pending.content_height = box->height;
+	container_set_geometry_from_content(con);
+	container_raise_floating(con);
+}
+
 static void update_ext_foreign_toplevel(struct sway_view *view) {
 	struct wlr_ext_foreign_toplevel_handle_v1_state toplevel_state = {
 		.app_id = view_get_app_id(view),
@@ -957,10 +1011,19 @@ void view_map(struct sway_view *view, struct wlr_surface *wlr_surface,
 		view_update_csd_from_client(view, decoration);
 	}
 
-	if (view->impl->wants_floating && view->impl->wants_floating(view)) {
+	struct wlr_box full_output_overlay_box = {0};
+	bool full_output_overlay = !fullscreen &&
+		view_would_join_tabbed_or_stacked(ws, target_sibling) &&
+		view_get_full_output_overlay_box(view, ws, &full_output_overlay_box);
+	if (full_output_overlay ||
+			(view->impl->wants_floating && view->impl->wants_floating(view))) {
 		view->container->pending.border = config->floating_border;
 		view->container->pending.border_thickness = config->floating_border_thickness;
 		container_set_floating(view->container, true);
+		if (full_output_overlay) {
+			configure_full_output_overlay(view->container,
+				&full_output_overlay_box);
+		}
 	} else {
 		view->container->pending.border = config->border;
 		view->container->pending.border_thickness = config->border_thickness;
