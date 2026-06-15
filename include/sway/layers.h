@@ -46,6 +46,7 @@ struct sway_layer_popup {
 };
 
 struct sway_output;
+struct sway_workspace;
 
 struct wlr_layer_surface_v1 *toplevel_layer_surface_from_surface(
 		struct wlr_surface *surface);
@@ -53,5 +54,7 @@ struct wlr_layer_surface_v1 *toplevel_layer_surface_from_surface(
 void arrange_layers(struct sway_output *output);
 
 void layer_apply_criteria(struct sway_layer_surface *surface, struct layer_criteria *criteria);
+
+bool workspace_has_full_output_layer_overlay(struct sway_workspace *ws);
 
 #endif

@@ -896,7 +896,8 @@ static bool handle_scrollable_touchpad_axis(struct sway_seat *seat,
 
 	struct sway_workspace *ws = seat_get_focused_workspace(seat);
 	if (!ws || ws->layout != L_SCROLL_H || ws->tiling->length == 0 ||
-			ws->fullscreen || workspace_has_maximized_container(ws)) {
+			ws->fullscreen || workspace_has_maximized_container(ws) ||
+			workspace_has_full_output_layer_overlay(ws)) {
 		return false;
 	}
 	if (node && node->type == N_WORKSPACE) {
@@ -1195,6 +1196,7 @@ static bool handle_scrollable_pinch_resize_begin(struct sway_seat *seat) {
 	struct sway_workspace *ws = seat_get_focused_workspace(seat);
 	if (!ws || ws->layout != L_SCROLL_H || ws->tiling->length == 0 ||
 			ws->fullscreen || workspace_has_maximized_container(ws) ||
+			workspace_has_full_output_layer_overlay(ws) ||
 			!cursor_is_over_workspace_or_container(seat, ws)) {
 		return false;
 	}

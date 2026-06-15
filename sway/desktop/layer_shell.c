@@ -8,6 +8,7 @@
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/util/box.h>
 #include "log.h"
 #include "sway/scene_descriptor.h"
 #include "sway/desktop/transaction.h"
@@ -245,6 +246,65 @@ static struct wlr_scene_tree *sway_layer_get_scene(struct sway_output *output,
 
 	sway_assert(false, "unreachable");
 	return NULL;
+}
+
+static bool layer_surface_covers_box(struct sway_layer_surface *surface,
+		const struct wlr_box *box) {
+	if (!surface || !surface->layer_surface ||
+			!surface->layer_surface->surface->mapped ||
+			surface->layer_surface->surface->current.width <= 0 ||
+			surface->layer_surface->surface->current.height <= 0) {
+		return false;
+	}
+
+	struct wlr_layer_surface_v1 *layer_surface = surface->layer_surface;
+	if (layer_surface->current.layer < ZWLR_LAYER_SHELL_V1_LAYER_TOP) {
+		return false;
+	}
+
+	int lx, ly;
+	wlr_scene_node_coords(&surface->scene->tree->node, &lx, &ly);
+	struct wlr_box surface_box = {
+		.x = lx,
+		.y = ly,
+		.width = layer_surface->surface->current.width,
+		.height = layer_surface->surface->current.height,
+	};
+
+	struct wlr_box intersection;
+	return wlr_box_intersection(&intersection, &surface_box, box) &&
+		intersection.width >= box->width - 2 &&
+		intersection.height >= box->height - 2;
+}
+
+static bool layer_tree_has_full_output_overlay(struct wlr_scene_tree *tree,
+		const struct wlr_box *output_box, const struct wlr_box *workspace_box) {
+	struct wlr_scene_node *node;
+	wl_list_for_each_reverse(node, &tree->children, link) {
+		struct sway_layer_surface *surface = scene_descriptor_try_get(node,
+			SWAY_SCENE_DESC_LAYER_SHELL);
+		if (layer_surface_covers_box(surface, output_box) ||
+				layer_surface_covers_box(surface, workspace_box)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool workspace_has_full_output_layer_overlay(struct sway_workspace *ws) {
+	if (!ws || !ws->output) {
+		return false;
+	}
+
+	struct wlr_box output_box;
+	output_get_box(ws->output, &output_box);
+	struct wlr_box workspace_box;
+	workspace_get_box(ws, &workspace_box);
+
+	return layer_tree_has_full_output_overlay(ws->output->layers.shell_overlay,
+			&output_box, &workspace_box) ||
+		layer_tree_has_full_output_overlay(ws->output->layers.shell_top,
+			&output_box, &workspace_box);
 }
 
 static struct sway_layer_surface *sway_layer_surface_create(
