@@ -173,9 +173,18 @@ static bool layer_surface_is_keyboard_focusable(
 		struct wlr_layer_surface_v1 *layer_surface) {
 	return layer_surface && layer_surface->surface &&
 		layer_surface->surface->mapped &&
-		layer_surface->current.keyboard_interactive !=
-			ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE &&
-		layer_surface->current.layer >= ZWLR_LAYER_SHELL_V1_LAYER_TOP;
+		layer_surface->current.layer >= ZWLR_LAYER_SHELL_V1_LAYER_TOP &&
+		(layer_surface->current.keyboard_interactive !=
+			ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE ||
+			layer_surface_is_full_output_overlay(layer_surface));
+}
+
+static bool layer_surface_should_force_focus(
+		struct wlr_layer_surface_v1 *layer_surface) {
+	return layer_surface_is_keyboard_focusable(layer_surface) &&
+		(layer_surface->current.keyboard_interactive ==
+			ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE ||
+			layer_surface_is_full_output_overlay(layer_surface));
 }
 
 void arrange_layers(struct sway_output *output) {
@@ -202,7 +211,7 @@ void arrange_layers(struct sway_output *output) {
 		arrange_popups(root->layers.popup);
 	}
 
-	// Find topmost keyboard interactive layer, if such a layer exists
+	// Find topmost layer which needs compositor-enforced focus.
 	struct wlr_scene_tree *layers_above_shell[] = {
 		output->layers.shell_overlay,
 		output->layers.shell_top,
@@ -215,10 +224,7 @@ void arrange_layers(struct sway_output *output) {
 				&layers_above_shell[i]->children, link) {
 			struct sway_layer_surface *surface = scene_descriptor_try_get(node,
 				SWAY_SCENE_DESC_LAYER_SHELL);
-			if (surface && layer_surface_is_keyboard_focusable(
-					surface->layer_surface) &&
-					surface->layer_surface->current.keyboard_interactive
-					== ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE) {
+			if (surface && layer_surface_should_force_focus(surface->layer_surface)) {
 				topmost = surface;
 				break;
 			}
@@ -236,8 +242,8 @@ void arrange_layers(struct sway_output *output) {
 		} else if (seat->focused_layer &&
 				seat->focused_layer->output == output->wlr_output &&
 				!layer_surface_is_keyboard_focusable(seat->focused_layer)) {
-			// Preserve focus for interactive on-demand layers. Only clear it
-			// once the focused layer stops being keyboard-focusable.
+			// Preserve focus for interactive overlays. Only clear it once the
+			// focused layer stops being keyboard-focusable.
 			seat_set_focus_layer(seat, NULL);
 		}
 	}
@@ -535,14 +541,16 @@ static void handle_map(struct wl_listener *listener, void *data) {
 	wlr_scene_node_lower_to_bottom(&surface->liquid_glass_node->node);
 
 	// focus on new surface
-	if (layer_surface->current.keyboard_interactive &&
+	if (layer_surface_is_keyboard_focusable(layer_surface) &&
 			(layer_surface->current.layer == ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY ||
 			layer_surface->current.layer == ZWLR_LAYER_SHELL_V1_LAYER_TOP)) {
 		struct sway_seat *seat;
 		wl_list_for_each(seat, &server.input->seats, link) {
-			// but only if the currently focused layer has a lower precedence
+			// but only if the currently focused layer has a lower precedence,
+			// or this layer should behave like a normal fullscreen window.
 			if (!seat->focused_layer ||
-					seat->focused_layer->current.layer <= layer_surface->current.layer) {
+					seat->focused_layer->current.layer <= layer_surface->current.layer ||
+					layer_surface_should_force_focus(layer_surface)) {
 				seat_set_focus_layer(seat, layer_surface);
 			}
 		}

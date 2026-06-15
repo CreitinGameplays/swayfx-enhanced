@@ -306,7 +306,8 @@ static void handle_tablet_tool_tip(struct sway_seat *seat,
 	struct wlr_xwayland_surface *xsurface;
 #endif
 	if ((layer = wlr_layer_surface_v1_try_from_wlr_surface(surface)) &&
-			layer->current.keyboard_interactive) {
+			(layer->current.keyboard_interactive ||
+			layer_surface_is_full_output_overlay(layer))) {
 		// Handle tapping a layer surface
 		seat_set_focus_layer(seat, layer);
 		transaction_commit_dirty();
@@ -470,7 +471,8 @@ static void handle_button(struct sway_seat *seat, uint32_t time_msec,
 	// Handle clicking a layer surface and its popups/subsurfaces
 	struct wlr_layer_surface_v1 *layer = NULL;
 	if ((layer = toplevel_layer_surface_from_surface(surface))) {
-		if (layer->current.keyboard_interactive) {
+		if (layer->current.keyboard_interactive ||
+				layer_surface_is_full_output_overlay(layer)) {
 			seat_set_focus_layer(seat, layer);
 			transaction_commit_dirty();
 		}
@@ -669,7 +671,8 @@ static void check_focus_follows_mouse(struct sway_seat *seat,
 		// Focus topmost layer surface
 		struct wlr_layer_surface_v1 *layer = NULL;
 		if ((layer = toplevel_layer_surface_from_surface(surface)) &&
-				layer->current.keyboard_interactive) {
+				(layer->current.keyboard_interactive ||
+				layer_surface_is_full_output_overlay(layer))) {
 			seat_set_focus_layer(seat, layer);
 			transaction_commit_dirty();
 			return;

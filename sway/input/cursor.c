@@ -45,6 +45,12 @@ static bool full_output_layer_overlay_at(struct wlr_scene_tree *tree,
 	wl_list_for_each_reverse(node, &tree->children, link) {
 		struct sway_layer_surface *surface = scene_descriptor_try_get(node,
 			SWAY_SCENE_DESC_LAYER_SHELL);
+		if (!surface && node->type == WLR_SCENE_NODE_TREE &&
+				full_output_layer_overlay_at(wlr_scene_tree_from_node(node),
+					lx, ly, wlr_surface, sx, sy)) {
+			return true;
+		}
+
 		if (!surface || !layer_surface_is_full_output_overlay(surface->layer_surface)) {
 			continue;
 		}
