@@ -1,4 +1,5 @@
 #include <float.h>
+#include <math.h>
 #include <scenefx/types/wlr_scene.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -796,7 +797,17 @@ static void handle_request_configure(struct wl_listener *listener, void *data) {
 		// Respect minimum and maximum sizes
 		view->natural_width = ev->width;
 		view->natural_height = ev->height;
-		container_floating_resize_and_center(view->container);
+		
+		double min_width, max_width, min_height, max_height;
+		get_constraints(view, &min_width, &max_width, &min_height, &max_height);
+		view->container->pending.content_width = fmax(min_width, fmin(ev->width, max_width));
+		view->container->pending.content_height = fmax(min_height, fmin(ev->height, max_height));
+		
+		if (view->container->pending.content_x == 0 && view->container->pending.content_y == 0) {
+			container_floating_resize_and_center(view->container);
+		} else {
+			container_set_geometry_from_content(view->container);
+		}
 
 		configure(view, view->container->pending.content_x,
 				view->container->pending.content_y,
