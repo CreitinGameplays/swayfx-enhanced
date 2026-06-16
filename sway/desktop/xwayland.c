@@ -386,7 +386,7 @@ static struct sway_xwayland_view *xwayland_view_from_view(
 }
 
 static const char *get_string_prop(struct sway_view *view, enum sway_view_prop prop) {
-	if (xwayland_view_from_view(view) == NULL) {
+	if (xwayland_view_from_view(view) == NULL || view->wlr_xwayland_surface == NULL) {
 		return NULL;
 	}
 	switch (prop) {
@@ -404,7 +404,7 @@ static const char *get_string_prop(struct sway_view *view, enum sway_view_prop p
 }
 
 static uint32_t get_int_prop(struct sway_view *view, enum sway_view_prop prop) {
-	if (xwayland_view_from_view(view) == NULL) {
+	if (xwayland_view_from_view(view) == NULL || view->wlr_xwayland_surface == NULL) {
 		return 0;
 	}
 	switch (prop) {
@@ -428,7 +428,7 @@ static uint32_t get_int_prop(struct sway_view *view, enum sway_view_prop prop) {
 static uint32_t configure(struct sway_view *view, double lx, double ly, int width,
 		int height) {
 	struct sway_xwayland_view *xwayland_view = xwayland_view_from_view(view);
-	if (xwayland_view == NULL) {
+	if (xwayland_view == NULL || view->wlr_xwayland_surface == NULL) {
 		return 0;
 	}
 	struct wlr_xwayland_surface *xsurface = view->wlr_xwayland_surface;
@@ -440,7 +440,7 @@ static uint32_t configure(struct sway_view *view, double lx, double ly, int widt
 }
 
 static void set_activated(struct sway_view *view, bool activated) {
-	if (xwayland_view_from_view(view) == NULL) {
+	if (xwayland_view_from_view(view) == NULL || view->wlr_xwayland_surface == NULL) {
 		return;
 	}
 	struct wlr_xwayland_surface *surface = view->wlr_xwayland_surface;
@@ -453,7 +453,7 @@ static void set_activated(struct sway_view *view, bool activated) {
 }
 
 static void set_tiled(struct sway_view *view, bool tiled) {
-	if (xwayland_view_from_view(view) == NULL) {
+	if (xwayland_view_from_view(view) == NULL || view->wlr_xwayland_surface == NULL) {
 		return;
 	}
 	struct wlr_xwayland_surface *surface = view->wlr_xwayland_surface;
@@ -461,7 +461,7 @@ static void set_tiled(struct sway_view *view, bool tiled) {
 }
 
 static void set_maximized(struct sway_view *view, bool maximized) {
-	if (xwayland_view_from_view(view) == NULL) {
+	if (xwayland_view_from_view(view) == NULL || view->wlr_xwayland_surface == NULL) {
 		return;
 	}
 	struct wlr_xwayland_surface *surface = view->wlr_xwayland_surface;
@@ -469,7 +469,7 @@ static void set_maximized(struct sway_view *view, bool maximized) {
 }
 
 static void set_fullscreen(struct sway_view *view, bool fullscreen) {
-	if (xwayland_view_from_view(view) == NULL) {
+	if (xwayland_view_from_view(view) == NULL || view->wlr_xwayland_surface == NULL) {
 		return;
 	}
 	struct wlr_xwayland_surface *surface = view->wlr_xwayland_surface;
@@ -477,7 +477,7 @@ static void set_fullscreen(struct sway_view *view, bool fullscreen) {
 }
 
 static bool wants_floating(struct sway_view *view) {
-	if (xwayland_view_from_view(view) == NULL) {
+	if (xwayland_view_from_view(view) == NULL || view->wlr_xwayland_surface == NULL) {
 		return false;
 	}
 	struct wlr_xwayland_surface *surface = view->wlr_xwayland_surface;
@@ -520,7 +520,7 @@ static void handle_set_decorations(struct wl_listener *listener, void *data) {
 
 static bool is_transient_for(struct sway_view *child,
 		struct sway_view *ancestor) {
-	if (xwayland_view_from_view(child) == NULL) {
+	if (xwayland_view_from_view(child) == NULL || child->wlr_xwayland_surface == NULL) {
 		return false;
 	}
 	struct wlr_xwayland_surface *surface = child->wlr_xwayland_surface;
@@ -534,7 +534,7 @@ static bool is_transient_for(struct sway_view *child,
 }
 
 static void _close(struct sway_view *view) {
-	if (xwayland_view_from_view(view) == NULL) {
+	if (xwayland_view_from_view(view) == NULL || view->wlr_xwayland_surface == NULL) {
 		return;
 	}
 	wlr_xwayland_surface_close(view->wlr_xwayland_surface);
@@ -550,6 +550,13 @@ static void destroy(struct sway_view *view) {
 
 static void get_constraints(struct sway_view *view, double *min_width,
 		double *max_width, double *min_height, double *max_height) {
+	if (view->wlr_xwayland_surface == NULL) {
+		*min_width = DBL_MIN;
+		*max_width = DBL_MAX;
+		*min_height = DBL_MIN;
+		*max_height = DBL_MAX;
+		return;
+	}
 	struct wlr_xwayland_surface *surface = view->wlr_xwayland_surface;
 	xcb_size_hints_t *size_hints = surface->size_hints;
 
