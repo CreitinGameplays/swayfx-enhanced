@@ -116,11 +116,11 @@ run_swaymsg() {
 }
 
 find_sway_pid() {
-	pgrep -xu "$USER" -f '(^|/)(sway|swayfx)( |$)' | head -n 1 || true
+	pgrep -u "$USER" -f '(^|/)(sway|swayfx)( |$)' | head -n 1 || true
 }
 
 find_xwayland_pids() {
-	pgrep -xu "$USER" -f '(^|/)Xwayland( |$)' || true
+	pgrep -u "$USER" -f '(^|/)Xwayland( |$)' || true
 }
 
 write_environment() {
@@ -316,7 +316,7 @@ start_strace_monitors() {
 	if [[ -n "$sway_pid" ]]; then
 		log "Starting strace monitor for sway compositor (PID $sway_pid)"
 		(
-			timeout "$XAPP_TIMEOUT" strace -p "$sway_pid" -f -o "$OUT_DIR/$prefix-sway-\$sway_pid.strace"
+			timeout "$XAPP_TIMEOUT" strace -p "$sway_pid" -f -o "$OUT_DIR/$prefix-sway-$sway_pid.strace"
 		) >/dev/null 2>&1 &
 		PIDS+=("$!")
 	fi
@@ -326,7 +326,7 @@ start_strace_monitors() {
 		[[ -n "$xpid" ]] || continue
 		log "Starting strace monitor for Xwayland (PID $xpid)"
 		(
-			timeout "$XAPP_TIMEOUT" strace -p "$xpid" -f -o "$OUT_DIR/$prefix-xwayland-\$xpid.strace"
+			timeout "$XAPP_TIMEOUT" strace -p "$xpid" -f -o "$OUT_DIR/$prefix-xwayland-$xpid.strace"
 		) >/dev/null 2>&1 &
 		PIDS+=("$!")
 	done < <(find_xwayland_pids)
