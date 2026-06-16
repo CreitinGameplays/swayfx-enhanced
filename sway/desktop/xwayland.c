@@ -630,7 +630,6 @@ static void handle_commit(struct wl_listener *listener, void *data) {
 static void handle_destroy(struct wl_listener *listener, void *data) {
 	struct sway_xwayland_view *xwayland_view =
 		wl_container_of(listener, xwayland_view, destroy);
-	struct sway_view *view = &xwayland_view->view;
 
 	if (xwayland_view->mapped) {
 		handle_unmap(&xwayland_view->unmap, NULL);
