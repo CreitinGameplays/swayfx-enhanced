@@ -116,7 +116,7 @@ static struct wlr_xwayland *sway_xwayland_create(
 	return xwayland;
 }
 
-static void handle_xwayland_destroy(struct wl_listener *listener, void *data) {
+void handle_xwayland_destroy(struct wl_listener *listener, void *data) {
 	struct sway_server *server =
 		wl_container_of(listener, server, xwayland_destroy);
 	sway_log(SWAY_INFO, "Xwayland destroyed, attempting to restart...");
@@ -149,6 +149,7 @@ static void handle_xwayland_destroy(struct wl_listener *listener, void *data) {
 		&server->xwayland_destroy);
 	server->xwayland_destroy.notify = handle_xwayland_destroy;
 }
+#endif
 
 #if WLR_HAS_DRM_BACKEND
 static void handle_drm_lease_request(struct wl_listener *listener, void *data) {
