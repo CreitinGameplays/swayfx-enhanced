@@ -171,6 +171,11 @@ struct sway_xwayland_view {
 	struct wl_listener override_redirect;
 
 	struct wl_listener surface_tree_destroy;
+
+	bool associated;
+	bool mapped;
+	bool commit_active;
+	bool surface_tree_destroy_active;
 };
 
 struct sway_xwayland_unmanaged {
@@ -188,6 +193,10 @@ struct sway_xwayland_unmanaged {
 	struct wl_listener unmap;
 	struct wl_listener destroy;
 	struct wl_listener override_redirect;
+
+	bool associated;
+	bool mapped;
+	bool set_geometry_active;
 };
 #endif
 

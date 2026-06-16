@@ -133,6 +133,10 @@ static void unmanaged_handle_set_geometry(struct wl_listener *listener, void *da
 		wl_container_of(listener, surface, set_geometry);
 	struct wlr_xwayland_surface *xsurface = surface->wlr_xwayland_surface;
 
+	if (!surface->surface_scene) {
+		return;
+	}
+
 	wlr_scene_node_set_position(&surface->surface_scene->buffer->node, xsurface->x, xsurface->y);
 }
 
@@ -143,6 +147,11 @@ static void unmanaged_handle_map(struct wl_listener *listener, void *data) {
 	struct sway_xwayland_unmanaged *surface =
 		wl_container_of(listener, surface, map);
 	struct wlr_xwayland_surface *xsurface = surface->wlr_xwayland_surface;
+
+	if (surface->mapped || xsurface->surface == NULL ||
+			!xsurface->surface->mapped) {
+		return;
+	}
 
 	if (unmanaged_promote_fullscreen_overlay(surface)) {
 		return;
@@ -159,7 +168,10 @@ static void unmanaged_handle_map(struct wl_listener *listener, void *data) {
 
 		wl_signal_add(&xsurface->events.set_geometry, &surface->set_geometry);
 		surface->set_geometry.notify = unmanaged_handle_set_geometry;
+		surface->set_geometry_active = true;
 	}
+
+	surface->mapped = true;
 
 	bool fullscreen_overlay =
 		sway_xwayland_surface_is_fullscreen_overlay(xsurface);
@@ -176,8 +188,16 @@ static void unmanaged_handle_unmap(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, surface, unmap);
 	struct wlr_xwayland_surface *xsurface = surface->wlr_xwayland_surface;
 
+	if (!surface->mapped) {
+		return;
+	}
+	surface->mapped = false;
+
 	if (surface->surface_scene) {
-		wl_list_remove(&surface->set_geometry.link);
+		if (surface->set_geometry_active) {
+			wl_list_remove(&surface->set_geometry.link);
+			surface->set_geometry_active = false;
+		}
 
 		wlr_scene_node_destroy(&surface->surface_scene->buffer->node);
 		surface->surface_scene = NULL;
@@ -228,33 +248,53 @@ static void unmanaged_handle_associate(struct wl_listener *listener, void *data)
 	struct sway_xwayland_unmanaged *surface =
 		wl_container_of(listener, surface, associate);
 	struct wlr_xwayland_surface *xsurface = surface->wlr_xwayland_surface;
+	if (surface->associated || xsurface->surface == NULL) {
+		return;
+	}
 	wl_signal_add(&xsurface->surface->events.map, &surface->map);
 	surface->map.notify = unmanaged_handle_map;
 	wl_signal_add(&xsurface->surface->events.unmap, &surface->unmap);
 	surface->unmap.notify = unmanaged_handle_unmap;
+	surface->associated = true;
 }
 
 static void unmanaged_handle_dissociate(struct wl_listener *listener, void *data) {
 	struct sway_xwayland_unmanaged *surface =
 		wl_container_of(listener, surface, dissociate);
+	if (!surface->associated) {
+		return;
+	}
+	if (surface->mapped) {
+		unmanaged_handle_unmap(&surface->unmap, NULL);
+	}
 	wl_list_remove(&surface->map.link);
 	wl_list_remove(&surface->unmap.link);
+	surface->associated = false;
 }
 
 static void unmanaged_handle_destroy(struct wl_listener *listener, void *data) {
 	struct sway_xwayland_unmanaged *surface =
 		wl_container_of(listener, surface, destroy);
+	if (surface->associated) {
+		unmanaged_handle_dissociate(&surface->dissociate, NULL);
+	}
 	wl_list_remove(&surface->request_configure.link);
 	wl_list_remove(&surface->associate.link);
 	wl_list_remove(&surface->dissociate.link);
 	wl_list_remove(&surface->destroy.link);
 	wl_list_remove(&surface->override_redirect.link);
 	wl_list_remove(&surface->request_activate.link);
+	if (surface->wlr_xwayland_surface &&
+			surface->wlr_xwayland_surface->data == surface) {
+		surface->wlr_xwayland_surface->data = NULL;
+	}
 	free(surface);
 }
 
 static void handle_map(struct wl_listener *listener, void *data);
+static void handle_unmap(struct wl_listener *listener, void *data);
 static void handle_associate(struct wl_listener *listener, void *data);
+static void handle_dissociate(struct wl_listener *listener, void *data);
 
 struct sway_xwayland_view *create_xwayland_view(struct wlr_xwayland_surface *xsurface);
 
@@ -270,6 +310,9 @@ static bool unmanaged_promote_fullscreen_overlay(
 	xsurface->data = NULL;
 
 	struct sway_xwayland_view *xwayland_view = create_xwayland_view(xsurface);
+	if (!xwayland_view) {
+		return false;
+	}
 	handle_associate(&xwayland_view->associate, NULL);
 	handle_map(&xwayland_view->map, xsurface);
 	return true;
@@ -293,6 +336,9 @@ static void unmanaged_handle_override_redirect(struct wl_listener *listener, voi
 	xsurface->data = NULL;
 
 	struct sway_xwayland_view *xwayland_view = create_xwayland_view(xsurface);
+	if (!xwayland_view) {
+		return;
+	}
 	if (associated) {
 		handle_associate(&xwayland_view->associate, NULL);
 	}
@@ -325,6 +371,7 @@ static struct sway_xwayland_unmanaged *create_unmanaged(
 	surface->override_redirect.notify = unmanaged_handle_override_redirect;
 	wl_signal_add(&xsurface->events.request_activate, &surface->request_activate);
 	surface->request_activate.notify = unmanaged_handle_request_activate;
+	xsurface->data = surface;
 
 	return surface;
 }
@@ -540,6 +587,10 @@ static void handle_commit(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, xwayland_view, commit);
 	struct sway_view *view = &xwayland_view->view;
 	struct wlr_xwayland_surface *xsurface = view->wlr_xwayland_surface;
+	if (!xwayland_view->mapped || xsurface == NULL ||
+			xsurface->surface == NULL || view->container == NULL) {
+		return;
+	}
 	struct wlr_surface_state *state = &xsurface->surface->current;
 
 	struct wlr_box new_geo = {0};
@@ -581,9 +632,14 @@ static void handle_destroy(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, xwayland_view, destroy);
 	struct sway_view *view = &xwayland_view->view;
 
-	if (view->surface) {
-		view_unmap(view);
+	if (xwayland_view->mapped) {
+		handle_unmap(&xwayland_view->unmap, NULL);
+	} else if (xwayland_view->commit_active) {
 		wl_list_remove(&xwayland_view->commit.link);
+		xwayland_view->commit_active = false;
+	}
+	if (xwayland_view->associated) {
+		handle_dissociate(&xwayland_view->dissociate, NULL);
 	}
 
 	xwayland_view->view.wlr_xwayland_surface = NULL;
@@ -613,12 +669,19 @@ static void handle_unmap(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, xwayland_view, unmap);
 	struct sway_view *view = &xwayland_view->view;
 
-	if (!sway_assert(view->surface, "Cannot unmap unmapped view")) {
+	if (!xwayland_view->mapped || !view->surface) {
 		return;
 	}
+	xwayland_view->mapped = false;
 
-	wl_list_remove(&xwayland_view->commit.link);
-	wl_list_remove(&xwayland_view->surface_tree_destroy.link);
+	if (xwayland_view->commit_active) {
+		wl_list_remove(&xwayland_view->commit.link);
+		xwayland_view->commit_active = false;
+	}
+	if (xwayland_view->surface_tree_destroy_active) {
+		wl_list_remove(&xwayland_view->surface_tree_destroy.link);
+		xwayland_view->surface_tree_destroy_active = false;
+	}
 
 	if (xwayland_view->surface_tree) {
 		wlr_scene_node_destroy(&xwayland_view->surface_tree->node);
@@ -631,6 +694,10 @@ static void handle_unmap(struct wl_listener *listener, void *data) {
 static void handle_surface_tree_destroy(struct wl_listener *listener, void *data) {
 	struct sway_xwayland_view *xwayland_view = wl_container_of(listener, xwayland_view,
 		surface_tree_destroy);
+	if (xwayland_view->surface_tree_destroy_active) {
+		wl_list_remove(&xwayland_view->surface_tree_destroy.link);
+		xwayland_view->surface_tree_destroy_active = false;
+	}
 	xwayland_view->surface_tree = NULL;
 }
 
@@ -640,6 +707,11 @@ static void handle_map(struct wl_listener *listener, void *data) {
 	struct sway_view *view = &xwayland_view->view;
 	struct wlr_xwayland_surface *xsurface = view->wlr_xwayland_surface;
 
+	if (xwayland_view->mapped || xsurface == NULL ||
+			xsurface->surface == NULL || !xsurface->surface->mapped) {
+		return;
+	}
+
 	view->natural_width = xsurface->width;
 	view->natural_height = xsurface->height;
 
@@ -647,9 +719,11 @@ static void handle_map(struct wl_listener *listener, void *data) {
 	// the underlying wlr_surface
 	wl_signal_add(&xsurface->surface->events.commit, &xwayland_view->commit);
 	xwayland_view->commit.notify = handle_commit;
+	xwayland_view->commit_active = true;
 
 	// Put it back into the tree
 	view_map(view, xsurface->surface, xsurface->fullscreen, NULL, false);
+	xwayland_view->mapped = true;
 
 	xwayland_view->surface_tree = wlr_scene_subsurface_tree_create(
 		xwayland_view->view.content_tree, xsurface->surface);
@@ -658,6 +732,7 @@ static void handle_map(struct wl_listener *listener, void *data) {
 		xwayland_view->surface_tree_destroy.notify = handle_surface_tree_destroy;
 		wl_signal_add(&xwayland_view->surface_tree->node.events.destroy,
 			&xwayland_view->surface_tree_destroy);
+		xwayland_view->surface_tree_destroy_active = true;
 	}
 
 	transaction_commit_dirty();
@@ -689,6 +764,9 @@ static void handle_override_redirect(struct wl_listener *listener, void *data) {
 	xsurface->data = NULL;
 
 	struct sway_xwayland_unmanaged *unmanaged = create_unmanaged(xsurface);
+	if (!unmanaged) {
+		return;
+	}
 	if (associated) {
 		unmanaged_handle_associate(&unmanaged->associate, NULL);
 	}
@@ -918,17 +996,29 @@ static void handle_associate(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, xwayland_view, associate);
 	struct wlr_xwayland_surface *xsurface =
 		xwayland_view->view.wlr_xwayland_surface;
+	if (xwayland_view->associated || xsurface == NULL ||
+			xsurface->surface == NULL) {
+		return;
+	}
 	wl_signal_add(&xsurface->surface->events.unmap, &xwayland_view->unmap);
 	xwayland_view->unmap.notify = handle_unmap;
 	wl_signal_add(&xsurface->surface->events.map, &xwayland_view->map);
 	xwayland_view->map.notify = handle_map;
+	xwayland_view->associated = true;
 }
 
 static void handle_dissociate(struct wl_listener *listener, void *data) {
 	struct sway_xwayland_view *xwayland_view =
 		wl_container_of(listener, xwayland_view, dissociate);
+	if (!xwayland_view->associated) {
+		return;
+	}
+	if (xwayland_view->mapped) {
+		handle_unmap(&xwayland_view->unmap, NULL);
+	}
 	wl_list_remove(&xwayland_view->map.link);
 	wl_list_remove(&xwayland_view->unmap.link);
+	xwayland_view->associated = false;
 }
 
 struct sway_view *view_from_wlr_xwayland_surface(
