@@ -165,13 +165,26 @@ static void restore_signals(void) {
 	struct sigaction sa_dfl = { .sa_handler = SIG_DFL };
 	sigaction(SIGCHLD, &sa_dfl, NULL);
 	sigaction(SIGPIPE, &sa_dfl, NULL);
+#ifndef ASAN_BUILD
 	sigaction(SIGSEGV, &sa_dfl, NULL);
 	sigaction(SIGABRT, &sa_dfl, NULL);
 	sigaction(SIGBUS, &sa_dfl, NULL);
 	sigaction(SIGFPE, &sa_dfl, NULL);
 	sigaction(SIGILL, &sa_dfl, NULL);
+#endif
 }
 
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define ASAN_BUILD
+#endif
+#endif
+
+#if defined(__SANITIZE_ADDRESS__)
+#define ASAN_BUILD
+#endif
+
+#ifndef ASAN_BUILD
 static void crash_signal_handler(int signal) {
 	const char *signal_name = "UNKNOWN";
 	switch (signal) {
@@ -185,6 +198,7 @@ static void crash_signal_handler(int signal) {
 		signal_name, signal);
 	sway_terminate(EXIT_FAILURE);
 }
+#endif
 
 static void init_signals(void) {
 	wl_event_loop_add_signal(server.wl_event_loop, SIGTERM, term_signal, NULL);
@@ -196,6 +210,7 @@ static void init_signals(void) {
 	// prevent ipc write errors from crashing sway
 	sigaction(SIGPIPE, &sa_ign, NULL);
 
+#ifndef ASAN_BUILD
 	struct sigaction sa_crash = { .sa_handler = crash_signal_handler };
 	sigemptyset(&sa_crash.sa_mask);
 	sa_crash.sa_flags = SA_RESETHAND;
@@ -204,6 +219,7 @@ static void init_signals(void) {
 	sigaction(SIGBUS, &sa_crash, NULL);
 	sigaction(SIGFPE, &sa_crash, NULL);
 	sigaction(SIGILL, &sa_crash, NULL);
+#endif
 
 	pthread_atfork(NULL, NULL, restore_signals);
 }
