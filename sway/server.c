@@ -62,6 +62,7 @@
 #include "sway/tree/root.h"
 
 #if WLR_HAS_XWAYLAND
+#include <wlr/xwayland/server.h>
 #include <wlr/xwayland/shell.h>
 #include "sway/xwayland.h"
 #endif
@@ -76,6 +77,45 @@
 #define SWAY_PRESENTATION_VERSION 2
 
 bool allow_unsupported_gpu = false;
+
+#if WLR_HAS_XWAYLAND
+#define SWAY_XWAYLAND_TERMINATE_DELAY 10
+
+static struct wlr_xwayland *sway_xwayland_create(
+		struct wl_display *wl_display, struct wlr_compositor *compositor,
+		bool lazy) {
+	struct wlr_xwayland_shell_v1 *shell_v1 =
+		wlr_xwayland_shell_v1_create(wl_display, 1);
+	if (shell_v1 == NULL) {
+		return NULL;
+	}
+
+	struct wlr_xwayland_server_options options = {
+		.lazy = lazy,
+		.enable_wm = true,
+		.terminate_delay = SWAY_XWAYLAND_TERMINATE_DELAY,
+	};
+	struct wlr_xwayland_server *xwayland_server =
+		wlr_xwayland_server_create(wl_display, &options);
+	if (xwayland_server == NULL) {
+		wlr_xwayland_shell_v1_destroy(shell_v1);
+		return NULL;
+	}
+
+	struct wlr_xwayland *xwayland =
+		wlr_xwayland_create_with_server(wl_display, compositor,
+			xwayland_server);
+	if (xwayland == NULL) {
+		wlr_xwayland_server_destroy(xwayland_server);
+		wlr_xwayland_shell_v1_destroy(shell_v1);
+		return NULL;
+	}
+
+	xwayland->shell_v1 = shell_v1;
+	xwayland->own_server = true;
+	return xwayland;
+}
+#endif
 
 #if WLR_HAS_DRM_BACKEND
 static void handle_drm_lease_request(struct wl_listener *listener, void *data) {
@@ -514,7 +554,7 @@ bool server_start(struct sway_server *server) {
 		sway_log(SWAY_DEBUG, "Initializing Xwayland (lazy=%d)",
 				config->xwayland == XWAYLAND_MODE_LAZY);
 		server->xwayland.wlr_xwayland =
-			wlr_xwayland_create(server->wl_display, server->compositor,
+			sway_xwayland_create(server->wl_display, server->compositor,
 					config->xwayland == XWAYLAND_MODE_LAZY);
 		if (!server->xwayland.wlr_xwayland) {
 			sway_log(SWAY_ERROR, "Failed to start Xwayland");

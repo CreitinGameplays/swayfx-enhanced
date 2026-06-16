@@ -98,6 +98,8 @@ If you use a personal config, add the same line near the top of:
 This starts the Xwayland server for compatibility. It should not force
 Wayland-capable apps onto X11; the session launcher keeps toolkit defaults on
 Wayland and leaves Xwayland for X11-only apps or explicit overrides.
+SwayFX-Enhanced keeps a short Xwayland terminate delay even in forced mode so
+X11 clients are not dropped during fast Xwayland restarts.
 
 ## 5. Verify at runtime
 
