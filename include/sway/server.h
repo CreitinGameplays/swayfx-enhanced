@@ -63,6 +63,7 @@ struct sway_server {
 	struct sway_xwayland xwayland;
 	struct wl_listener xwayland_surface;
 	struct wl_listener xwayland_ready;
+	struct wl_listener xwayland_destroy;
 #endif
 
 	struct wlr_relative_pointer_manager_v1 *relative_pointer_manager;
@@ -188,5 +189,8 @@ void xdg_activation_v1_handle_new_token(struct wl_listener *listener,
 void set_rr_scheduling(void);
 
 void handle_new_tearing_hint(struct wl_listener *listener, void *data);
+#if WLR_HAS_XWAYLAND
+void handle_xwayland_destroy(struct wl_listener *listener, void *data);
+#endif
 
 #endif

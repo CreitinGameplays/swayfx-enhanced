@@ -115,7 +115,40 @@ static struct wlr_xwayland *sway_xwayland_create(
 	xwayland->own_server = true;
 	return xwayland;
 }
-#endif
+
+static void handle_xwayland_destroy(struct wl_listener *listener, void *data) {
+	struct sway_server *server =
+		wl_container_of(listener, server, xwayland_destroy);
+	sway_log(SWAY_INFO, "Xwayland destroyed, attempting to restart...");
+
+	if (config->xwayland == XWAYLAND_MODE_DISABLED) {
+		sway_log(SWAY_DEBUG, "Xwayland disabled, not restarting");
+		return;
+	}
+
+	wl_list_remove(&server->xwayland_surface.link);
+	wl_list_remove(&server->xwayland_ready.link);
+	wl_list_remove(&server->xwayland_destroy.link);
+
+	server->xwayland.wlr_xwayland =
+		sway_xwayland_create(server->wl_display, server->compositor,
+				config->xwayland == XWAYLAND_MODE_LAZY);
+	if (!server->xwayland.wlr_xwayland) {
+		sway_log(SWAY_ERROR, "Failed to restart Xwayland");
+		unsetenv("DISPLAY");
+		return;
+	}
+
+	wl_signal_add(&server->xwayland.wlr_xwayland->events.new_surface,
+		&server->xwayland_surface);
+	server->xwayland_surface.notify = handle_xwayland_surface;
+	wl_signal_add(&server->xwayland.wlr_xwayland->events.ready,
+		&server->xwayland_ready);
+	server->xwayland_ready.notify = handle_xwayland_ready;
+	wl_signal_add(&server->xwayland.wlr_xwayland->events.destroy,
+		&server->xwayland_destroy);
+	server->xwayland_destroy.notify = handle_xwayland_destroy;
+}
 
 #if WLR_HAS_DRM_BACKEND
 static void handle_drm_lease_request(struct wl_listener *listener, void *data) {
@@ -566,6 +599,9 @@ bool server_start(struct sway_server *server) {
 			wl_signal_add(&server->xwayland.wlr_xwayland->events.ready,
 				&server->xwayland_ready);
 			server->xwayland_ready.notify = handle_xwayland_ready;
+			wl_signal_add(&server->xwayland.wlr_xwayland->events.destroy,
+				&server->xwayland_destroy);
+			server->xwayland_destroy.notify = handle_xwayland_destroy;
 
 			if (config->xwayland != XWAYLAND_MODE_LAZY) {
 				setenv("DISPLAY", server->xwayland.wlr_xwayland->display_name, true);
