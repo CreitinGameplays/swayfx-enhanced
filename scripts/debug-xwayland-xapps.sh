@@ -177,6 +177,7 @@ snapshot_processes() {
 	run_shell_capture "$prefix-processes" "ps -eo pid,ppid,pgid,sid,stat,wchan:24,comm,args | grep -E 'sway|swayfx|Xwayland|xterm|xeyes|xclock|foot|dbus|pipewire' | grep -v grep"
 	run_shell_capture "$prefix-xwayland-pids" "pgrep -a -u '$USER' -f '(^|/)Xwayland( |$)' || true"
 	run_shell_capture "$prefix-sockets" "ss -xlpn 2>/dev/null | grep -E 'X11|wayland|sway|Xwayland|\\.X11-unix' || true"
+	run_shell_capture "$prefix-top" "top -b -n 1 -c | head -n 30"
 	run_shell_capture "$prefix-tmp-x11" "ls -la /tmp/.X11-unix /tmp 2>/dev/null | sed -n '1,160p'"
 	if need_cmd lsof; then
 		run_shell_capture "$prefix-lsof-xwayland" "pids=\$(pgrep -u '$USER' -f '(^|/)Xwayland( |$)' | tr '\n' ','); pids=\${pids%,}; if [ -n \"\$pids\" ]; then lsof -nP -p \"\$pids\"; fi"
@@ -304,6 +305,33 @@ start_compositor_watchdog() {
 	PIDS+=("$!")
 }
 
+start_strace_monitors() {
+	local prefix="$1"
+	if ! need_cmd strace; then
+		warn "strace not found; skipped process monitors"
+		return
+	fi
+	local sway_pid
+	sway_pid="$(find_sway_pid)"
+	if [[ -n "$sway_pid" ]]; then
+		log "Starting strace monitor for sway compositor (PID $sway_pid)"
+		(
+			timeout "$XAPP_TIMEOUT" strace -p "$sway_pid" -f -o "$OUT_DIR/$prefix-sway-\$sway_pid.strace"
+		) >/dev/null 2>&1 &
+		PIDS+=("$!")
+	fi
+
+	local xpid
+	while read -r xpid; do
+		[[ -n "$xpid" ]] || continue
+		log "Starting strace monitor for Xwayland (PID $xpid)"
+		(
+			timeout "$XAPP_TIMEOUT" strace -p "$xpid" -f -o "$OUT_DIR/$prefix-xwayland-\$xpid.strace"
+		) >/dev/null 2>&1 &
+		PIDS+=("$!")
+	done < <(find_xwayland_pids)
+}
+
 run_xapp() {
 	local prefix="$1"
 	shift
@@ -357,6 +385,7 @@ run_case() {
 	start_ipc_subscribe "$prefix"
 	start_journal_capture "$prefix"
 	start_compositor_watchdog "$prefix"
+	start_strace_monitors "$prefix"
 
 	run_xapp "$prefix-app" "${cmd[@]}"
 	sleep 1
@@ -379,6 +408,7 @@ run_stress() {
 	start_ipc_subscribe "stress"
 	start_journal_capture "stress"
 	start_compositor_watchdog "stress"
+	start_strace_monitors "stress"
 
 	for i in $(seq 1 10); do
 		log "Stress iteration $i"
