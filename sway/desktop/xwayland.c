@@ -149,6 +149,11 @@ static void unmanaged_handle_map(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, surface, map);
 	struct wlr_xwayland_surface *xsurface = surface->wlr_xwayland_surface;
 
+	if (!surface || !xsurface) {
+		sway_log(SWAY_ERROR, "unmanaged_handle_map: surface or xsurface is NULL");
+		return;
+	}
+
 	if (surface->mapped || xsurface->surface == NULL ||
 			!xsurface->surface->mapped) {
 		return;
@@ -170,6 +175,8 @@ static void unmanaged_handle_map(struct wl_listener *listener, void *data) {
 		wl_signal_add(&xsurface->events.set_geometry, &surface->set_geometry);
 		surface->set_geometry.notify = unmanaged_handle_set_geometry;
 		surface->set_geometry_active = true;
+	} else {
+		sway_log(SWAY_ERROR, "Failed to create scene surface for unmanaged xwayland surface");
 	}
 
 	surface->mapped = true;
@@ -276,19 +283,44 @@ static void unmanaged_handle_dissociate(struct wl_listener *listener, void *data
 static void unmanaged_handle_destroy(struct wl_listener *listener, void *data) {
 	struct sway_xwayland_unmanaged *surface =
 		wl_container_of(listener, surface, destroy);
+	if (!surface) {
+		sway_log(SWAY_ERROR, "unmanaged_handle_destroy: surface is NULL");
+		return;
+	}
+
 	if (surface->associated) {
 		unmanaged_handle_dissociate(&surface->dissociate, NULL);
 	}
-	wl_list_remove(&surface->request_configure.link);
-	wl_list_remove(&surface->associate.link);
-	wl_list_remove(&surface->dissociate.link);
-	wl_list_remove(&surface->destroy.link);
-	wl_list_remove(&surface->override_redirect.link);
-	wl_list_remove(&surface->request_activate.link);
+
+	if (!wl_list_empty(&surface->request_configure.link)) {
+		wl_list_remove(&surface->request_configure.link);
+	}
+	if (!wl_list_empty(&surface->associate.link)) {
+		wl_list_remove(&surface->associate.link);
+	}
+	if (!wl_list_empty(&surface->dissociate.link)) {
+		wl_list_remove(&surface->dissociate.link);
+	}
+	if (!wl_list_empty(&surface->destroy.link)) {
+		wl_list_remove(&surface->destroy.link);
+	}
+	if (!wl_list_empty(&surface->override_redirect.link)) {
+		wl_list_remove(&surface->override_redirect.link);
+	}
+	if (!wl_list_empty(&surface->request_activate.link)) {
+		wl_list_remove(&surface->request_activate.link);
+	}
+
 	if (surface->wlr_xwayland_surface &&
 			surface->wlr_xwayland_surface->data == surface) {
 		surface->wlr_xwayland_surface->data = NULL;
 	}
+
+	if (surface->surface_scene) {
+		wlr_scene_node_destroy(&surface->surface_scene->buffer->node);
+		surface->surface_scene = NULL;
+	}
+
 	free(surface);
 }
 
@@ -324,6 +356,11 @@ static void unmanaged_handle_override_redirect(struct wl_listener *listener, voi
 		wl_container_of(listener, surface, override_redirect);
 	struct wlr_xwayland_surface *xsurface = surface->wlr_xwayland_surface;
 
+	if (!xsurface) {
+		sway_log(SWAY_ERROR, "unmanaged_handle_override_redirect: xsurface is NULL");
+		return;
+	}
+
 	bool associated = xsurface->surface != NULL;
 	bool mapped = associated && xsurface->surface->mapped;
 	if (mapped) {
@@ -338,6 +375,7 @@ static void unmanaged_handle_override_redirect(struct wl_listener *listener, voi
 
 	struct sway_xwayland_view *xwayland_view = create_xwayland_view(xsurface);
 	if (!xwayland_view) {
+		sway_log(SWAY_ERROR, "Failed to create xwayland view during override_redirect");
 		return;
 	}
 	if (associated) {
@@ -515,6 +553,15 @@ static void handle_set_decorations(struct wl_listener *listener, void *data) {
 	struct sway_view *view = &xwayland_view->view;
 	struct wlr_xwayland_surface *xsurface = view->wlr_xwayland_surface;
 
+	if (!xwayland_view || !view || !xsurface) {
+		sway_log(SWAY_ERROR, "handle_set_decorations: invalid parameters");
+		return;
+	}
+
+	if (xsurface->surface == NULL || !xsurface->surface->mapped) {
+		return;
+	}
+
 	bool csd = xsurface->decorations != WLR_XWAYLAND_SURFACE_DECORATIONS_ALL;
 	view_update_csd_from_client(view, csd);
 }
@@ -595,8 +642,13 @@ static void handle_commit(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, xwayland_view, commit);
 	struct sway_view *view = &xwayland_view->view;
 	struct wlr_xwayland_surface *xsurface = view->wlr_xwayland_surface;
-	if (!xwayland_view->mapped || xsurface == NULL ||
-			xsurface->surface == NULL || view->container == NULL) {
+
+	if (!xwayland_view || !view || !xsurface) {
+		sway_log(SWAY_ERROR, "handle_commit: xwayland_view, view, or xsurface is NULL");
+		return;
+	}
+
+	if (!xwayland_view->mapped || xsurface->surface == NULL || view->container == NULL) {
 		return;
 	}
 	struct wlr_surface_state *state = &xsurface->surface->current;
@@ -639,10 +691,17 @@ static void handle_destroy(struct wl_listener *listener, void *data) {
 	struct sway_xwayland_view *xwayland_view =
 		wl_container_of(listener, xwayland_view, destroy);
 
+	if (!xwayland_view) {
+		sway_log(SWAY_ERROR, "handle_destroy: xwayland_view is NULL");
+		return;
+	}
+
 	if (xwayland_view->mapped) {
 		handle_unmap(&xwayland_view->unmap, NULL);
 	} else if (xwayland_view->commit_active) {
-		wl_list_remove(&xwayland_view->commit.link);
+		if (!wl_list_empty(&xwayland_view->commit.link)) {
+			wl_list_remove(&xwayland_view->commit.link);
+		}
 		xwayland_view->commit_active = false;
 	}
 	if (xwayland_view->associated) {
@@ -651,23 +710,58 @@ static void handle_destroy(struct wl_listener *listener, void *data) {
 
 	xwayland_view->view.wlr_xwayland_surface = NULL;
 
-	wl_list_remove(&xwayland_view->destroy.link);
-	wl_list_remove(&xwayland_view->request_configure.link);
-	wl_list_remove(&xwayland_view->request_fullscreen.link);
-	wl_list_remove(&xwayland_view->request_minimize.link);
-	wl_list_remove(&xwayland_view->request_move.link);
-	wl_list_remove(&xwayland_view->request_resize.link);
-	wl_list_remove(&xwayland_view->request_activate.link);
-	wl_list_remove(&xwayland_view->set_title.link);
-	wl_list_remove(&xwayland_view->set_class.link);
-	wl_list_remove(&xwayland_view->set_role.link);
-	wl_list_remove(&xwayland_view->set_startup_id.link);
-	wl_list_remove(&xwayland_view->set_window_type.link);
-	wl_list_remove(&xwayland_view->set_hints.link);
-	wl_list_remove(&xwayland_view->set_decorations.link);
-	wl_list_remove(&xwayland_view->associate.link);
-	wl_list_remove(&xwayland_view->dissociate.link);
-	wl_list_remove(&xwayland_view->override_redirect.link);
+	if (!wl_list_empty(&xwayland_view->destroy.link)) {
+		wl_list_remove(&xwayland_view->destroy.link);
+	}
+	if (!wl_list_empty(&xwayland_view->request_configure.link)) {
+		wl_list_remove(&xwayland_view->request_configure.link);
+	}
+	if (!wl_list_empty(&xwayland_view->request_fullscreen.link)) {
+		wl_list_remove(&xwayland_view->request_fullscreen.link);
+	}
+	if (!wl_list_empty(&xwayland_view->request_minimize.link)) {
+		wl_list_remove(&xwayland_view->request_minimize.link);
+	}
+	if (!wl_list_empty(&xwayland_view->request_move.link)) {
+		wl_list_remove(&xwayland_view->request_move.link);
+	}
+	if (!wl_list_empty(&xwayland_view->request_resize.link)) {
+		wl_list_remove(&xwayland_view->request_resize.link);
+	}
+	if (!wl_list_empty(&xwayland_view->request_activate.link)) {
+		wl_list_remove(&xwayland_view->request_activate.link);
+	}
+	if (!wl_list_empty(&xwayland_view->set_title.link)) {
+		wl_list_remove(&xwayland_view->set_title.link);
+	}
+	if (!wl_list_empty(&xwayland_view->set_class.link)) {
+		wl_list_remove(&xwayland_view->set_class.link);
+	}
+	if (!wl_list_empty(&xwayland_view->set_role.link)) {
+		wl_list_remove(&xwayland_view->set_role.link);
+	}
+	if (!wl_list_empty(&xwayland_view->set_startup_id.link)) {
+		wl_list_remove(&xwayland_view->set_startup_id.link);
+	}
+	if (!wl_list_empty(&xwayland_view->set_window_type.link)) {
+		wl_list_remove(&xwayland_view->set_window_type.link);
+	}
+	if (!wl_list_empty(&xwayland_view->set_hints.link)) {
+		wl_list_remove(&xwayland_view->set_hints.link);
+	}
+	if (!wl_list_empty(&xwayland_view->set_decorations.link)) {
+		wl_list_remove(&xwayland_view->set_decorations.link);
+	}
+	if (!wl_list_empty(&xwayland_view->associate.link)) {
+		wl_list_remove(&xwayland_view->associate.link);
+	}
+	if (!wl_list_empty(&xwayland_view->dissociate.link)) {
+		wl_list_remove(&xwayland_view->dissociate.link);
+	}
+	if (!wl_list_empty(&xwayland_view->override_redirect.link)) {
+		wl_list_remove(&xwayland_view->override_redirect.link);
+	}
+
 	view_begin_destroy(&xwayland_view->view);
 }
 
@@ -676,17 +770,26 @@ static void handle_unmap(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, xwayland_view, unmap);
 	struct sway_view *view = &xwayland_view->view;
 
+	if (!xwayland_view) {
+		sway_log(SWAY_ERROR, "handle_unmap: xwayland_view is NULL");
+		return;
+	}
+
 	if (!xwayland_view->mapped || !view->surface) {
 		return;
 	}
 	xwayland_view->mapped = false;
 
 	if (xwayland_view->commit_active) {
-		wl_list_remove(&xwayland_view->commit.link);
+		if (!wl_list_empty(&xwayland_view->commit.link)) {
+			wl_list_remove(&xwayland_view->commit.link);
+		}
 		xwayland_view->commit_active = false;
 	}
 	if (xwayland_view->surface_tree_destroy_active) {
-		wl_list_remove(&xwayland_view->surface_tree_destroy.link);
+		if (!wl_list_empty(&xwayland_view->surface_tree_destroy.link)) {
+			wl_list_remove(&xwayland_view->surface_tree_destroy.link);
+		}
 		xwayland_view->surface_tree_destroy_active = false;
 	}
 
@@ -701,8 +804,15 @@ static void handle_unmap(struct wl_listener *listener, void *data) {
 static void handle_surface_tree_destroy(struct wl_listener *listener, void *data) {
 	struct sway_xwayland_view *xwayland_view = wl_container_of(listener, xwayland_view,
 		surface_tree_destroy);
+	if (!xwayland_view) {
+		sway_log(SWAY_ERROR, "handle_surface_tree_destroy: xwayland_view is NULL");
+		return;
+	}
+
 	if (xwayland_view->surface_tree_destroy_active) {
-		wl_list_remove(&xwayland_view->surface_tree_destroy.link);
+		if (!wl_list_empty(&xwayland_view->surface_tree_destroy.link)) {
+			wl_list_remove(&xwayland_view->surface_tree_destroy.link);
+		}
 		xwayland_view->surface_tree_destroy_active = false;
 	}
 	xwayland_view->surface_tree = NULL;
@@ -714,8 +824,13 @@ static void handle_map(struct wl_listener *listener, void *data) {
 	struct sway_view *view = &xwayland_view->view;
 	struct wlr_xwayland_surface *xsurface = view->wlr_xwayland_surface;
 
-	if (xwayland_view->mapped || xsurface == NULL ||
-			xsurface->surface == NULL || !xsurface->surface->mapped) {
+	if (!xwayland_view || !view || !xsurface) {
+		sway_log(SWAY_ERROR, "handle_map: xwayland_view, view, or xsurface is NULL");
+		return;
+	}
+
+	if (xwayland_view->mapped || xsurface->surface == NULL ||
+			!xsurface->surface->mapped) {
 		return;
 	}
 
@@ -740,6 +855,8 @@ static void handle_map(struct wl_listener *listener, void *data) {
 		wl_signal_add(&xwayland_view->surface_tree->node.events.destroy,
 			&xwayland_view->surface_tree_destroy);
 		xwayland_view->surface_tree_destroy_active = true;
+	} else {
+		sway_log(SWAY_ERROR, "Failed to create surface tree for xwayland view");
 	}
 
 	transaction_commit_dirty();
@@ -752,6 +869,11 @@ static void handle_override_redirect(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, xwayland_view, override_redirect);
 	struct sway_view *view = &xwayland_view->view;
 	struct wlr_xwayland_surface *xsurface = view->wlr_xwayland_surface;
+
+	if (!xwayland_view || !view || !xsurface) {
+		sway_log(SWAY_ERROR, "handle_override_redirect: xwayland_view, view, or xsurface is NULL");
+		return;
+	}
 
 	if (!xsurface->override_redirect ||
 			xwayland_surface_has_fullscreen_overlay_geometry(xsurface)) {
@@ -772,6 +894,7 @@ static void handle_override_redirect(struct wl_listener *listener, void *data) {
 
 	struct sway_xwayland_unmanaged *unmanaged = create_unmanaged(xsurface);
 	if (!unmanaged) {
+		sway_log(SWAY_ERROR, "Failed to create unmanaged surface during override_redirect");
 		return;
 	}
 	if (associated) {
@@ -788,9 +911,19 @@ static void handle_request_configure(struct wl_listener *listener, void *data) {
 	struct wlr_xwayland_surface_configure_event *ev = data;
 	struct sway_view *view = &xwayland_view->view;
 	struct wlr_xwayland_surface *xsurface = view->wlr_xwayland_surface;
+
+	if (!xwayland_view || !view || !xsurface || !ev) {
+		sway_log(SWAY_ERROR, "handle_request_configure: invalid parameters");
+		return;
+	}
+
 	if (xsurface->surface == NULL || !xsurface->surface->mapped) {
 		wlr_xwayland_surface_configure(xsurface, ev->x, ev->y,
 			ev->width, ev->height);
+		return;
+	}
+	if (!view->container) {
+		sway_log(SWAY_ERROR, "handle_request_configure: view->container is NULL");
 		return;
 	}
 	if (container_is_floating(view->container)) {
@@ -827,7 +960,17 @@ static void handle_request_fullscreen(struct wl_listener *listener, void *data) 
 		wl_container_of(listener, xwayland_view, request_fullscreen);
 	struct sway_view *view = &xwayland_view->view;
 	struct wlr_xwayland_surface *xsurface = view->wlr_xwayland_surface;
+
+	if (!xwayland_view || !view || !xsurface) {
+		sway_log(SWAY_ERROR, "handle_request_fullscreen: invalid parameters");
+		return;
+	}
+
 	if (xsurface->surface == NULL || !xsurface->surface->mapped) {
+		return;
+	}
+	if (!view->container) {
+		sway_log(SWAY_ERROR, "handle_request_fullscreen: view->container is NULL");
 		return;
 	}
 	container_set_fullscreen(view->container, xsurface->fullscreen);
@@ -841,12 +984,27 @@ static void handle_request_minimize(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, xwayland_view, request_minimize);
 	struct sway_view *view = &xwayland_view->view;
 	struct wlr_xwayland_surface *xsurface = view->wlr_xwayland_surface;
+
+	if (!xwayland_view || !view || !xsurface) {
+		sway_log(SWAY_ERROR, "handle_request_minimize: invalid parameters");
+		return;
+	}
+
 	if (xsurface->surface == NULL || !xsurface->surface->mapped) {
 		return;
 	}
 
 	struct wlr_xwayland_minimize_event *e = data;
+	if (!e) {
+		sway_log(SWAY_ERROR, "handle_request_minimize: event data is NULL");
+		return;
+	}
+
 	if (config->scratchpad_minimize) {
+		if (!view->container) {
+			sway_log(SWAY_ERROR, "handle_request_minimize: view->container is NULL");
+			return;
+		}
 		struct sway_container *container = view->container;
 		if (!container->pending.workspace) {
 			while (container->pending.parent) {
@@ -878,7 +1036,17 @@ static void handle_request_move(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, xwayland_view, request_move);
 	struct sway_view *view = &xwayland_view->view;
 	struct wlr_xwayland_surface *xsurface = view->wlr_xwayland_surface;
+
+	if (!xwayland_view || !view || !xsurface) {
+		sway_log(SWAY_ERROR, "handle_request_move: invalid parameters");
+		return;
+	}
+
 	if (xsurface->surface == NULL || !xsurface->surface->mapped) {
+		return;
+	}
+	if (!view->container) {
+		sway_log(SWAY_ERROR, "handle_request_move: view->container is NULL");
 		return;
 	}
 	if (!container_is_floating(view->container) ||
@@ -894,13 +1062,27 @@ static void handle_request_resize(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, xwayland_view, request_resize);
 	struct sway_view *view = &xwayland_view->view;
 	struct wlr_xwayland_surface *xsurface = view->wlr_xwayland_surface;
+
+	if (!xwayland_view || !view || !xsurface) {
+		sway_log(SWAY_ERROR, "handle_request_resize: invalid parameters");
+		return;
+	}
+
 	if (xsurface->surface == NULL || !xsurface->surface->mapped) {
+		return;
+	}
+	if (!view->container) {
+		sway_log(SWAY_ERROR, "handle_request_resize: view->container is NULL");
 		return;
 	}
 	if (!container_is_floating(view->container)) {
 		return;
 	}
 	struct wlr_xwayland_resize_event *e = data;
+	if (!e) {
+		sway_log(SWAY_ERROR, "handle_request_resize: event data is NULL");
+		return;
+	}
 	struct sway_seat *seat = input_manager_current_seat();
 	seatop_begin_resize_floating(seat, view->container, e->edges);
 }
@@ -910,6 +1092,12 @@ static void handle_request_activate(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, xwayland_view, request_activate);
 	struct sway_view *view = &xwayland_view->view;
 	struct wlr_xwayland_surface *xsurface = view->wlr_xwayland_surface;
+
+	if (!xwayland_view || !view || !xsurface) {
+		sway_log(SWAY_ERROR, "handle_request_activate: invalid parameters");
+		return;
+	}
+
 	if (xsurface->surface == NULL || !xsurface->surface->mapped) {
 		return;
 	}
@@ -923,6 +1111,12 @@ static void handle_set_title(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, xwayland_view, set_title);
 	struct sway_view *view = &xwayland_view->view;
 	struct wlr_xwayland_surface *xsurface = view->wlr_xwayland_surface;
+
+	if (!xwayland_view || !view || !xsurface) {
+		sway_log(SWAY_ERROR, "handle_set_title: invalid parameters");
+		return;
+	}
+
 	if (xsurface->surface == NULL || !xsurface->surface->mapped) {
 		return;
 	}
@@ -935,6 +1129,12 @@ static void handle_set_class(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, xwayland_view, set_class);
 	struct sway_view *view = &xwayland_view->view;
 	struct wlr_xwayland_surface *xsurface = view->wlr_xwayland_surface;
+
+	if (!xwayland_view || !view || !xsurface) {
+		sway_log(SWAY_ERROR, "handle_set_class: invalid parameters");
+		return;
+	}
+
 	if (xsurface->surface == NULL || !xsurface->surface->mapped) {
 		return;
 	}
@@ -946,6 +1146,12 @@ static void handle_set_role(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, xwayland_view, set_role);
 	struct sway_view *view = &xwayland_view->view;
 	struct wlr_xwayland_surface *xsurface = view->wlr_xwayland_surface;
+
+	if (!xwayland_view || !view || !xsurface) {
+		sway_log(SWAY_ERROR, "handle_set_role: invalid parameters");
+		return;
+	}
+
 	if (xsurface->surface == NULL || !xsurface->surface->mapped) {
 		return;
 	}
@@ -957,6 +1163,12 @@ static void handle_set_startup_id(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, xwayland_view, set_startup_id);
 	struct sway_view *view = &xwayland_view->view;
 	struct wlr_xwayland_surface *xsurface = view->wlr_xwayland_surface;
+
+	if (!xwayland_view || !view || !xsurface) {
+		sway_log(SWAY_ERROR, "handle_set_startup_id: invalid parameters");
+		return;
+	}
+
 	if (xsurface->startup_id == NULL) {
 		return;
 	}
@@ -982,6 +1194,12 @@ static void handle_set_window_type(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, xwayland_view, set_window_type);
 	struct sway_view *view = &xwayland_view->view;
 	struct wlr_xwayland_surface *xsurface = view->wlr_xwayland_surface;
+
+	if (!xwayland_view || !view || !xsurface) {
+		sway_log(SWAY_ERROR, "handle_set_window_type: invalid parameters");
+		return;
+	}
+
 	if (xsurface->surface == NULL || !xsurface->surface->mapped) {
 		return;
 	}
@@ -993,6 +1211,12 @@ static void handle_set_hints(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, xwayland_view, set_hints);
 	struct sway_view *view = &xwayland_view->view;
 	struct wlr_xwayland_surface *xsurface = view->wlr_xwayland_surface;
+
+	if (!xwayland_view || !view || !xsurface) {
+		sway_log(SWAY_ERROR, "handle_set_hints: invalid parameters");
+		return;
+	}
+
 	if (xsurface->surface == NULL || !xsurface->surface->mapped) {
 		return;
 	}
@@ -1013,8 +1237,13 @@ static void handle_associate(struct wl_listener *listener, void *data) {
 		wl_container_of(listener, xwayland_view, associate);
 	struct wlr_xwayland_surface *xsurface =
 		xwayland_view->view.wlr_xwayland_surface;
-	if (xwayland_view->associated || xsurface == NULL ||
-			xsurface->surface == NULL) {
+
+	if (!xwayland_view || !xsurface) {
+		sway_log(SWAY_ERROR, "handle_associate: invalid parameters");
+		return;
+	}
+
+	if (xwayland_view->associated || xsurface->surface == NULL) {
 		return;
 	}
 	wl_signal_add(&xsurface->surface->events.unmap, &xwayland_view->unmap);
@@ -1027,6 +1256,12 @@ static void handle_associate(struct wl_listener *listener, void *data) {
 static void handle_dissociate(struct wl_listener *listener, void *data) {
 	struct sway_xwayland_view *xwayland_view =
 		wl_container_of(listener, xwayland_view, dissociate);
+
+	if (!xwayland_view) {
+		sway_log(SWAY_ERROR, "handle_dissociate: xwayland_view is NULL");
+		return;
+	}
+
 	if (!xwayland_view->associated) {
 		return;
 	}
@@ -1044,16 +1279,24 @@ struct sway_view *view_from_wlr_xwayland_surface(
 }
 
 struct sway_xwayland_view *create_xwayland_view(struct wlr_xwayland_surface *xsurface) {
+	if (!xsurface) {
+		sway_log(SWAY_ERROR, "create_xwayland_view: xsurface is NULL");
+		return NULL;
+	}
+
 	sway_log(SWAY_DEBUG, "New xwayland surface title='%s' class='%s'",
-		xsurface->title, xsurface->class);
+		xsurface->title ? xsurface->title : "(null)",
+		xsurface->class ? xsurface->class : "(null)");
 
 	struct sway_xwayland_view *xwayland_view =
 		calloc(1, sizeof(struct sway_xwayland_view));
-	if (!sway_assert(xwayland_view, "Failed to allocate view")) {
+	if (!xwayland_view) {
+		sway_log(SWAY_ERROR, "Failed to allocate xwayland view");
 		return NULL;
 	}
 
 	if (!view_init(&xwayland_view->view, SWAY_VIEW_XWAYLAND, &view_impl)) {
+		sway_log(SWAY_ERROR, "Failed to initialize xwayland view");
 		free(xwayland_view);
 		return NULL;
 	}
@@ -1128,20 +1371,40 @@ struct sway_xwayland_view *create_xwayland_view(struct wlr_xwayland_surface *xsu
 void handle_xwayland_surface(struct wl_listener *listener, void *data) {
 	struct wlr_xwayland_surface *xsurface = data;
 
-	if (xsurface->override_redirect &&
-			!xwayland_surface_has_fullscreen_overlay_geometry(xsurface)) {
-		sway_log(SWAY_DEBUG, "New xwayland unmanaged surface");
-		create_unmanaged(xsurface);
+	if (!xsurface) {
+		sway_log(SWAY_ERROR, "handle_xwayland_surface: xsurface is NULL");
 		return;
 	}
 
-	create_xwayland_view(xsurface);
+	if (xsurface->override_redirect &&
+			!xwayland_surface_has_fullscreen_overlay_geometry(xsurface)) {
+		sway_log(SWAY_DEBUG, "New xwayland unmanaged surface");
+		struct sway_xwayland_unmanaged *unmanaged = create_unmanaged(xsurface);
+		if (!unmanaged) {
+			sway_log(SWAY_ERROR, "Failed to create unmanaged xwayland surface");
+		}
+		return;
+	}
+
+	struct sway_xwayland_view *view = create_xwayland_view(xsurface);
+	if (!view) {
+		sway_log(SWAY_ERROR, "Failed to create xwayland view for surface");
+	}
 }
 
 void handle_xwayland_ready(struct wl_listener *listener, void *data) {
 	struct sway_server *server =
 		wl_container_of(listener, server, xwayland_ready);
 	struct sway_xwayland *xwayland = &server->xwayland;
+	struct wlr_xwayland *wlr_xwayland = server->xwayland.wlr_xwayland;
+
+	if (!wlr_xwayland || !wlr_xwayland->display_name) {
+		sway_log(SWAY_ERROR, "Xwayland ready but display name is not set");
+		return;
+	}
+
+	sway_log(SWAY_DEBUG, "Xwayland ready on display %s", wlr_xwayland->display_name);
+	setenv("DISPLAY", wlr_xwayland->display_name, true);
 
 	xcb_connection_t *xcb_conn = xcb_connect(NULL, NULL);
 	int err = xcb_connection_has_error(xcb_conn);

@@ -79,7 +79,7 @@
 bool allow_unsupported_gpu = false;
 
 #if WLR_HAS_XWAYLAND
-#define SWAY_XWAYLAND_TERMINATE_DELAY 10
+#define SWAY_XWAYLAND_TERMINATE_DELAY 60
 
 static struct wlr_xwayland *sway_xwayland_create(
 		struct wl_display *wl_display, struct wlr_compositor *compositor,
@@ -567,7 +567,9 @@ bool server_start(struct sway_server *server) {
 				&server->xwayland_ready);
 			server->xwayland_ready.notify = handle_xwayland_ready;
 
-			setenv("DISPLAY", server->xwayland.wlr_xwayland->display_name, true);
+			if (config->xwayland != XWAYLAND_MODE_LAZY) {
+				setenv("DISPLAY", server->xwayland.wlr_xwayland->display_name, true);
+			}
 
 			/* xcursor configured by the default seat */
 		}

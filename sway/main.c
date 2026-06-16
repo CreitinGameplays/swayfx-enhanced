@@ -165,6 +165,25 @@ static void restore_signals(void) {
 	struct sigaction sa_dfl = { .sa_handler = SIG_DFL };
 	sigaction(SIGCHLD, &sa_dfl, NULL);
 	sigaction(SIGPIPE, &sa_dfl, NULL);
+	sigaction(SIGSEGV, &sa_dfl, NULL);
+	sigaction(SIGABRT, &sa_dfl, NULL);
+	sigaction(SIGBUS, &sa_dfl, NULL);
+	sigaction(SIGFPE, &sa_dfl, NULL);
+	sigaction(SIGILL, &sa_dfl, NULL);
+}
+
+static void crash_signal_handler(int signal) {
+	const char *signal_name = "UNKNOWN";
+	switch (signal) {
+	case SIGSEGV: signal_name = "SIGSEGV"; break;
+	case SIGABRT: signal_name = "SIGABRT"; break;
+	case SIGBUS:  signal_name = "SIGBUS"; break;
+	case SIGFPE:  signal_name = "SIGFPE"; break;
+	case SIGILL:  signal_name = "SIGILL"; break;
+	}
+	sway_log(SWAY_ERROR, "Caught fatal signal %s (%d), terminating gracefully",
+		signal_name, signal);
+	sway_terminate(EXIT_FAILURE);
 }
 
 static void init_signals(void) {
@@ -176,6 +195,15 @@ static void init_signals(void) {
 	sigaction(SIGCHLD, &sa_ign, NULL);
 	// prevent ipc write errors from crashing sway
 	sigaction(SIGPIPE, &sa_ign, NULL);
+
+	struct sigaction sa_crash = { .sa_handler = crash_signal_handler };
+	sigemptyset(&sa_crash.sa_mask);
+	sa_crash.sa_flags = SA_RESETHAND;
+	sigaction(SIGSEGV, &sa_crash, NULL);
+	sigaction(SIGABRT, &sa_crash, NULL);
+	sigaction(SIGBUS, &sa_crash, NULL);
+	sigaction(SIGFPE, &sa_crash, NULL);
+	sigaction(SIGILL, &sa_crash, NULL);
 
 	pthread_atfork(NULL, NULL, restore_signals);
 }
