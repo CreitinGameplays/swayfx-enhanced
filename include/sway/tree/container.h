@@ -163,6 +163,9 @@ struct sway_container {
 	// Hidden scratchpad containers have a NULL parent.
 	bool scratchpad;
 
+	// XDG overlay-style views that should remain above fullscreen windows.
+	bool full_output_overlay;
+
 	// Stores last output size and position for adjusting coordinates of
 	// scratchpad windows.
 	// Unused for non-scratchpad windows.

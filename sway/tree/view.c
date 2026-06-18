@@ -1017,6 +1017,7 @@ void view_map(struct sway_view *view, struct wlr_surface *wlr_surface,
 		view_get_full_output_overlay_box(view, ws, &full_output_overlay_box);
 	if (full_output_overlay ||
 			(view->impl->wants_floating && view->impl->wants_floating(view))) {
+		view->container->full_output_overlay = full_output_overlay;
 		view->container->pending.border = config->floating_border;
 		view->container->pending.border_thickness = config->floating_border_thickness;
 		container_set_floating(view->container, true);

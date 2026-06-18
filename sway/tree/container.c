@@ -738,6 +738,10 @@ struct sway_container *container_obstructing_fullscreen_container(
 	struct sway_container *toplevel = container_toplevel_ancestor(container);
 	struct sway_workspace *workspace = toplevel->pending.workspace;
 
+	if (toplevel->full_output_overlay) {
+		return NULL;
+	}
+
 	if (workspace && workspace->fullscreen &&
 			!container_is_fullscreen_or_child(toplevel)) {
 		if (container_is_transient_for(toplevel, workspace->fullscreen)) {

@@ -60,6 +60,36 @@ static int get_container_scroll_x_adjustment(struct sway_container *con) {
 	return ws->layers.tiling->node.x - ws->current.x;
 }
 
+static struct wlr_scene_tree *get_floating_layer(struct sway_container *floater) {
+	if (floater->full_output_overlay) {
+		struct sway_workspace *workspace = floater->pending.workspace ?
+			floater->pending.workspace : floater->current.workspace;
+		if (workspace && workspace->output) {
+			return workspace->output->layers.shell_overlay;
+		}
+	}
+
+	struct wlr_scene_tree *layer = root->layers.floating;
+
+	if (root->fullscreen_global) {
+		if (container_is_transient_for(floater, root->fullscreen_global)) {
+			layer = root->layers.fullscreen_global;
+		}
+	} else {
+		for (int i = 0; i < root->outputs->length; i++) {
+			struct sway_output *output = root->outputs->items[i];
+			struct sway_workspace *active = output->current.active_workspace;
+
+			if (active && active->fullscreen &&
+					container_is_transient_for(floater, active->fullscreen)) {
+				layer = root->layers.fullscreen;
+			}
+		}
+	}
+
+	return layer;
+}
+
 static struct sway_transaction *transaction_create(void) {
 	struct sway_transaction *transaction =
 		calloc(1, sizeof(struct sway_transaction));
@@ -790,28 +820,12 @@ static void arrange_fullscreen(struct wlr_scene_tree *tree,
 static void arrange_workspace_floating(struct sway_workspace *ws) {
 	for (int i = 0; i < ws->current.floating->length; i++) {
 		struct sway_container *floater = ws->current.floating->items[i];
-		struct wlr_scene_tree *layer = root->layers.floating;
-
-		if (floater->current.fullscreen_mode != FULLSCREEN_NONE) {
+		if (floater->current.fullscreen_mode != FULLSCREEN_NONE &&
+				!floater->full_output_overlay) {
 			continue;
 		}
 
-		if (root->fullscreen_global) {
-			if (container_is_transient_for(floater, root->fullscreen_global)) {
-				layer = root->layers.fullscreen_global;
-			}
-		} else {
-			for (int i = 0; i < root->outputs->length; i++) {
-				struct sway_output *output = root->outputs->items[i];
-				struct sway_workspace *active = output->current.active_workspace;
-
-				if (active && active->fullscreen &&
-						container_is_transient_for(floater, active->fullscreen)) {
-					layer = root->layers.fullscreen;
-				}
-			}
-		}
-
+		struct wlr_scene_tree *layer = get_floating_layer(floater);
 		wlr_scene_node_reparent(&floater->scene_tree->node, layer);
 		wlr_scene_node_set_position(&floater->scene_tree->node,
 			floater->current.x, floater->current.y);
@@ -901,9 +915,11 @@ static void disable_workspace(struct sway_workspace *ws) {
 
 	for (int i = 0; i < ws->current.floating->length; i++) {
 		struct sway_container *floater = ws->current.floating->items[i];
-		wlr_scene_node_reparent(&floater->scene_tree->node, root->layers.floating);
+		wlr_scene_node_reparent(&floater->scene_tree->node,
+			get_floating_layer(floater));
 		disable_container(floater);
-		wlr_scene_node_set_enabled(&floater->scene_tree->node, false);
+		wlr_scene_node_set_enabled(&floater->scene_tree->node,
+			floater->full_output_overlay);
 	}
 }
 
@@ -1094,7 +1110,7 @@ static bool container_start_close_animation(struct sway_container *con) {
 
 	int lx, ly;
 	wlr_scene_node_coords(&con->scene_tree->node, &lx, &ly);
-	wlr_scene_node_reparent(&con->scene_tree->node, root->layers.floating);
+	wlr_scene_node_reparent(&con->scene_tree->node, get_floating_layer(con));
 	wlr_scene_node_set_position(&con->scene_tree->node, lx, ly);
 
 	if (con->animation_state.animation &&
