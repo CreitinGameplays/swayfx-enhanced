@@ -676,12 +676,13 @@ static struct sway_workspace *select_workspace(struct sway_view *view) {
 	return NULL;
 }
 
-static struct sway_container *overlay_restore_target(struct sway_view *view,
+static struct sway_container *overlay_restore_target(
+		struct sway_workspace *ws,
+		struct sway_container *fullscreen_global,
 		struct sway_seat *seat) {
-	struct sway_workspace *ws = view->container->pending.workspace;
 	struct sway_container *restore_target = NULL;
-	if (root->fullscreen_global) {
-		restore_target = root->fullscreen_global;
+	if (fullscreen_global) {
+		restore_target = fullscreen_global;
 	} else if (ws && ws->fullscreen) {
 		restore_target = ws->fullscreen;
 	}
@@ -1132,21 +1133,9 @@ void view_unmap(struct sway_view *view) {
 
 	struct sway_container *parent = view->container->pending.parent;
 	struct sway_workspace *ws = view->container->pending.workspace;
+	struct sway_container *fullscreen_global = root->fullscreen_global;
+	bool restore_focus_after_destroy = view->container->full_output_overlay;
 	struct sway_seat *seat;
-	if (view->container->full_output_overlay) {
-		wl_list_for_each(seat, &server.input->seats, link) {
-			struct sway_container *restore_target =
-				overlay_restore_target(view, seat);
-			if (!restore_target) {
-				continue;
-			}
-			if (seat_get_focus(seat) == &view->container->node ||
-					seat->wlr_seat->keyboard_state.focused_surface == view->surface) {
-				seat_set_focus_container(seat, restore_target);
-				seat_consider_warp_to_focus(seat);
-			}
-		}
-	}
 	view->container->animation_state.close_title_bar =
 		view_close_animation_has_title_bar(view);
 	container_begin_destroy(view->container);
@@ -1162,6 +1151,18 @@ void view_unmap(struct sway_view *view) {
 	} else if (ws && !ws->node.destroying) {
 		arrange_workspace(ws);
 		workspace_detect_urgent(ws);
+	}
+
+	if (restore_focus_after_destroy) {
+		wl_list_for_each(seat, &server.input->seats, link) {
+			struct sway_container *restore_target =
+				overlay_restore_target(ws, fullscreen_global, seat);
+			if (!restore_target) {
+				continue;
+			}
+			seat_set_focus_container(seat, restore_target);
+			seat_consider_warp_to_focus(seat);
+		}
 	}
 
 	struct sway_seat *seat2;
