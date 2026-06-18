@@ -1147,6 +1147,13 @@ void seat_set_raw_focus(struct sway_seat *seat, struct sway_node *node) {
 static void seat_set_workspace_focus(struct sway_seat *seat, struct sway_node *node) {
 	struct sway_node *last_focus = seat_get_focus(seat);
 	if (last_focus == node) {
+		if (node && node->type == N_CONTAINER && node->sway_container->view &&
+				seat->wlr_seat->keyboard_state.focused_surface !=
+					node->sway_container->view->surface) {
+			// The focus stack already points at this view, but the keyboard seat
+			// may have been left on a layer surface or otherwise lost its enter.
+			seat_send_focus(node, seat);
+		}
 		return;
 	}
 
