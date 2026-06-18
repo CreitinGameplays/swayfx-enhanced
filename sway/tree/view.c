@@ -1164,17 +1164,17 @@ void view_unmap(struct sway_view *view) {
 		workspace_detect_urgent(ws);
 	}
 
-	struct sway_seat *seat;
-	wl_list_for_each(seat, &server.input->seats, link) {
-		seat->cursor->image_surface = NULL;
-		if (seat->cursor->active_constraint) {
+	struct sway_seat *seat2;
+	wl_list_for_each(seat2, &server.input->seats, link) {
+		seat2->cursor->image_surface = NULL;
+		if (seat2->cursor->active_constraint) {
 			struct wlr_surface *constrain_surface =
-				seat->cursor->active_constraint->surface;
+				seat2->cursor->active_constraint->surface;
 			if (view_from_wlr_surface(constrain_surface) == view) {
-				sway_cursor_constrain(seat->cursor, NULL);
+				sway_cursor_constrain(seat2->cursor, NULL);
 			}
 		}
-		seat_consider_warp_to_focus(seat);
+		seat_consider_warp_to_focus(seat2);
 	}
 
 	transaction_commit_dirty();
