@@ -676,15 +676,26 @@ static struct sway_workspace *select_workspace(struct sway_view *view) {
 	return NULL;
 }
 
-static struct sway_container *overlay_restore_target(struct sway_view *view) {
+static struct sway_container *overlay_restore_target(struct sway_view *view,
+		struct sway_seat *seat) {
 	struct sway_workspace *ws = view->container->pending.workspace;
+	struct sway_container *restore_target = NULL;
 	if (root->fullscreen_global) {
-		return root->fullscreen_global;
+		restore_target = root->fullscreen_global;
+	} else if (ws && ws->fullscreen) {
+		restore_target = ws->fullscreen;
 	}
-	if (ws && ws->fullscreen) {
-		return ws->fullscreen;
+	if (!restore_target) {
+		return NULL;
 	}
-	return NULL;
+	/*
+	 * Fullscreen containers can be wrappers in tabbed/stacked trees. Restore
+	 * the actual focused view inside that subtree so keyboard and pointer focus
+	 * land on the real client, not the layout container.
+	 */
+	struct sway_container *focused_view =
+		seat_get_focus_inactive_view(seat, &restore_target->node);
+	return focused_view ? focused_view : restore_target;
 }
 
 static bool view_get_full_output_overlay_box(struct sway_view *view,
@@ -1121,13 +1132,14 @@ void view_unmap(struct sway_view *view) {
 
 	struct sway_container *parent = view->container->pending.parent;
 	struct sway_workspace *ws = view->container->pending.workspace;
-	struct sway_container *restore_target = NULL;
+	struct sway_seat *seat;
 	if (view->container->full_output_overlay) {
-		restore_target = overlay_restore_target(view);
-	}
-	if (restore_target) {
-		struct sway_seat *seat;
 		wl_list_for_each(seat, &server.input->seats, link) {
+			struct sway_container *restore_target =
+				overlay_restore_target(view, seat);
+			if (!restore_target) {
+				continue;
+			}
 			if (seat_get_focus(seat) == &view->container->node ||
 					seat->wlr_seat->keyboard_state.focused_surface == view->surface) {
 				seat_set_focus_container(seat, restore_target);

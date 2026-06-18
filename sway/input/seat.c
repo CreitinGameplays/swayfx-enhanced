@@ -1340,6 +1340,15 @@ void seat_set_focus_layer(struct sway_seat *seat,
 		seat->has_exclusive_layer = false;
 		struct sway_node *previous = seat_get_focus_inactive(seat, &root->node);
 		if (previous) {
+			// Retained layer teardown should return to the leaf view, not a
+			// tabbed/stacked wrapper container.
+			struct sway_container *view =
+				seat_get_focus_inactive_view(seat, previous);
+			if (view) {
+				previous = &view->node;
+			}
+		}
+		if (previous) {
 			// Hack to get seat to re-focus the return value of get_focus
 			seat_set_focus(seat, NULL);
 			seat_set_focus(seat, previous);
