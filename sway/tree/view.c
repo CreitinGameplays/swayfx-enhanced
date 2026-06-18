@@ -676,6 +676,17 @@ static struct sway_workspace *select_workspace(struct sway_view *view) {
 	return NULL;
 }
 
+static struct sway_container *overlay_restore_target(struct sway_view *view) {
+	struct sway_workspace *ws = view->container->pending.workspace;
+	if (root->fullscreen_global) {
+		return root->fullscreen_global;
+	}
+	if (ws && ws->fullscreen) {
+		return ws->fullscreen;
+	}
+	return NULL;
+}
+
 static bool view_get_full_output_overlay_box(struct sway_view *view,
 		struct sway_workspace *ws, struct wlr_box *box) {
 	if (!ws || !ws->output || view->natural_width <= 0 ||
@@ -1110,6 +1121,20 @@ void view_unmap(struct sway_view *view) {
 
 	struct sway_container *parent = view->container->pending.parent;
 	struct sway_workspace *ws = view->container->pending.workspace;
+	struct sway_container *restore_target = NULL;
+	if (view->container->full_output_overlay) {
+		restore_target = overlay_restore_target(view);
+	}
+	if (restore_target) {
+		struct sway_seat *seat;
+		wl_list_for_each(seat, &server.input->seats, link) {
+			if (seat_get_focus(seat) == &view->container->node ||
+					seat->wlr_seat->keyboard_state.focused_surface == view->surface) {
+				seat_set_focus_container(seat, restore_target);
+				seat_consider_warp_to_focus(seat);
+			}
+		}
+	}
 	view->container->animation_state.close_title_bar =
 		view_close_animation_has_title_bar(view);
 	container_begin_destroy(view->container);
