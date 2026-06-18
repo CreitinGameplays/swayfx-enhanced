@@ -342,7 +342,10 @@ bool layer_surface_is_full_output_overlay(struct wlr_layer_surface_v1 *layer_sur
 bool layer_surface_should_retain_focus(struct wlr_layer_surface_v1 *layer_surface) {
 	return layer_surface && layer_surface->surface &&
 		layer_surface->surface->mapped &&
-		layer_surface->current.layer >= ZWLR_LAYER_SHELL_V1_LAYER_TOP;
+		layer_surface->current.layer >= ZWLR_LAYER_SHELL_V1_LAYER_TOP &&
+		(layer_surface->current.keyboard_interactive !=
+			ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE ||
+			layer_surface_is_full_output_overlay(layer_surface));
 }
 
 bool workspace_has_full_output_layer_overlay(struct sway_workspace *ws) {
