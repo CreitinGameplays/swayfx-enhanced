@@ -807,9 +807,12 @@ static void arrange_fullscreen(struct wlr_scene_tree *tree,
 
 		// if we only care about the view, disable any decorations
 		wlr_scene_node_set_enabled(&fs->scene_tree->node, false);
+		sway_log(SWAY_DEBUG, "arrange_fullscreen: view=%p surface=%p tree=%p reparent to fullscreen layer",
+				(void*)fs->view, (void*)fs->view->surface, (void*)tree);
 	} else {
 		fs_node = &fs->scene_tree->node;
 		arrange_container(fs, width, height, true, container_get_gaps(fs));
+		sway_log(SWAY_DEBUG, "arrange_fullscreen: container=%p (no view) reparent to fullscreen layer", (void*)fs);
 	}
 
 	wlr_scene_node_reparent(fs_node, tree);
@@ -940,6 +943,8 @@ static void arrange_output(struct sway_output *output, int width, int height) {
 
 		if (activated) {
 			struct sway_container *fs = child->current.fullscreen;
+			sway_log(SWAY_DEBUG, "arrange_output: workspace=%s fullscreen=%p fs_view=%p enabling fullscreen_layer=%d",
+					child->name, (void*)fs, fs && fs->view ? (void*)fs->view : NULL, fs ? 1 : 0);
 			wlr_scene_node_set_enabled(&child->layers.tiling->node, !fs);
 			wlr_scene_node_set_enabled(&child->layers.fullscreen->node, fs);
 

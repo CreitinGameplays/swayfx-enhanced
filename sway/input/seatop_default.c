@@ -737,15 +737,19 @@ static void handle_pointer_motion(struct sway_seat *seat, uint32_t time_msec) {
 		check_focus_follows_mouse(seat, e, node);
 	}
 
-	if (surface) {
-		if (seat_is_input_allowed(seat, surface)) {
-			wlr_seat_pointer_notify_enter(seat->wlr_seat, surface, sx, sy);
-			wlr_seat_pointer_notify_motion(seat->wlr_seat, time_msec, sx, sy);
-		}
-	} else {
-		cursor_update_image(cursor, node);
-		wlr_seat_pointer_notify_clear_focus(seat->wlr_seat);
-	}
+ 	if (surface) {
+  		if (seat_is_input_allowed(seat, surface)) {
+  			sway_log(SWAY_DEBUG, "Pointer motion: enter surface=%p node_type=%d",
+  					(void*)surface, node ? (int)node->type : -1);
+  			wlr_seat_pointer_notify_enter(seat->wlr_seat, surface, sx, sy);
+  			wlr_seat_pointer_notify_motion(seat->wlr_seat, time_msec, sx, sy);
+  		}
+  	} else {
+  		cursor_update_image(cursor, node);
+  		sway_log(SWAY_DEBUG, "Pointer motion: clearing focus (no surface) node=%p node_type=%d",
+  				(void*)node, node ? (int)node->type : -1);
+  		wlr_seat_pointer_notify_clear_focus(seat->wlr_seat);
+  	}
 
 	drag_icons_update_position(seat);
 
@@ -1514,13 +1518,20 @@ static void handle_rebase(struct sway_seat *seat, uint32_t time_msec) {
 	e->previous_node = node_at_coords(seat,
 			cursor->cursor->x, cursor->cursor->y, &surface, &sx, &sy);
 
+	sway_log(SWAY_DEBUG, "Rebase: cursor=(%.0f,%.0f) node=%p surface=%p node_type=%d",
+			cursor->cursor->x, cursor->cursor->y,
+			(void*)e->previous_node, (void*)surface,
+			e->previous_node ? e->previous_node->type : (enum sway_node_type)-1);
+
 	if (surface) {
 		if (seat_is_input_allowed(seat, surface)) {
+			sway_log(SWAY_DEBUG, "Rebase: enter surface=%p", (void*)surface);
 			wlr_seat_pointer_notify_enter(seat->wlr_seat, surface, sx, sy);
 			wlr_seat_pointer_notify_motion(seat->wlr_seat, time_msec, sx, sy);
 		}
 	} else {
 		cursor_update_image(cursor, e->previous_node);
+		sway_log(SWAY_DEBUG, "Rebase: clearing focus (no surface)");
 		wlr_seat_pointer_notify_clear_focus(seat->wlr_seat);
 	}
 }

@@ -1526,11 +1526,14 @@ static void set_fullscreen(struct sway_container *con, bool enable) {
 
 static void container_fullscreen_workspace(struct sway_container *con) {
 	if (!sway_assert(con->pending.fullscreen_mode == FULLSCREEN_NONE,
-				"Expected a non-fullscreen container")) {
+			"Expected a non-fullscreen container")) {
 		return;
 	}
 	set_fullscreen(con, true);
 	con->pending.fullscreen_mode = FULLSCREEN_WORKSPACE;
+	sway_log(SWAY_DEBUG, "container_fullscreen_workspace: con=%p view=%p workspace=%s",
+			(void*)con, con->view ? (void*)con->view : NULL,
+			con->pending.workspace ? con->pending.workspace->name : "none");
 
 	con->saved_x = con->pending.x;
 	con->saved_y = con->pending.y;
@@ -1560,12 +1563,14 @@ static void container_fullscreen_workspace(struct sway_container *con) {
 
 static void container_fullscreen_global(struct sway_container *con) {
 	if (!sway_assert(con->pending.fullscreen_mode == FULLSCREEN_NONE,
-				"Expected a non-fullscreen container")) {
+			"Expected a non-fullscreen container")) {
 		return;
 	}
 	set_fullscreen(con, true);
 
 	root->fullscreen_global = con;
+	sway_log(SWAY_DEBUG, "container_fullscreen_global: con=%p view=%p",
+			(void*)con, con->view ? (void*)con->view : NULL);
 	con->saved_x = con->pending.x;
 	con->saved_y = con->pending.y;
 	con->saved_width = con->pending.width;
@@ -1586,9 +1591,12 @@ static void container_fullscreen_global(struct sway_container *con) {
 
 void container_fullscreen_disable(struct sway_container *con) {
 	if (!sway_assert(con->pending.fullscreen_mode != FULLSCREEN_NONE,
-				"Expected a fullscreen container")) {
+			"Expected a fullscreen container")) {
 		return;
 	}
+	sway_log(SWAY_DEBUG, "container_fullscreen_disable: con=%p view=%p mode=%d",
+			(void*)con, con->view ? (void*)con->view : NULL,
+			con->pending.fullscreen_mode);
 	set_fullscreen(con, false);
 
 	if (container_is_floating(con)) {

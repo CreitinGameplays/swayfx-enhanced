@@ -252,20 +252,24 @@ struct sway_node *node_at_coords(
 	struct wlr_output *wlr_output = wlr_output_layout_output_at(
 			root->output_layout, lx, ly);
 	if (wlr_output == NULL) {
+		sway_log(SWAY_DEBUG, "node_at_coords: no output at (%.0f,%.0f)", lx, ly);
 		return NULL;
 	}
 
 	struct sway_output *output = wlr_output->data;
 	if (!output || !output->enabled) {
 		// output is being destroyed or is being enabled
+		sway_log(SWAY_DEBUG, "node_at_coords: output not enabled");
 		return NULL;
 	}
 
 	struct sway_workspace *ws = output_get_active_workspace(output);
 	if (!ws) {
+		sway_log(SWAY_DEBUG, "node_at_coords: no workspace on output %s", output->wlr_output->name);
 		return NULL;
 	}
 
+	sway_log(SWAY_DEBUG, "node_at_coords: returning workspace %s node=%p", ws->name, (void*)&ws->node);
 	return &ws->node;
 }
 
@@ -307,6 +311,8 @@ void cursor_update_image(struct sway_cursor *cursor,
 }
 
 static void cursor_hide(struct sway_cursor *cursor) {
+	sway_log(SWAY_DEBUG, "Cursor hide: clearing pointer focus cursor=(%.0f,%.0f)",
+			cursor->cursor->x, cursor->cursor->y);
 	wlr_cursor_unset_image(cursor->cursor);
 	cursor->hidden = true;
 	wlr_seat_pointer_notify_clear_focus(cursor->seat->wlr_seat);
