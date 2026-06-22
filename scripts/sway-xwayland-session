@@ -13,8 +13,26 @@ export ELECTRON_OZONE_PLATFORM_HINT=wayland
 
 bindir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
-if [ -x "$bindir/swayfx" ]; then
-	exec "$bindir/swayfx" "$@"
-fi
+# 1. Define a cleanup function to fix the TTY for 'ly'
+cleanup() {
+    # Disable exit-on-error for the cleanup phase
+    set +e
+    # Give seatd/elogind a split-second to release the DRM/Input devices
+    sleep 0.5
+    # Restore terminal properties
+    stty sane
+    # Attempt to pull keyboard out of raw mode (suppress errors if run as non-root)
+    kbd_mode -a 2>/dev/null
+    # Completely reset the TTY
+    reset
+}
 
-exec "$bindir/sway" "$@"
+# 2. Trap the script exit so the cleanup ALWAYS runs, even if Sway crashes
+trap cleanup EXIT INT TERM
+
+# 3. Launch Sway without 'exec', and use if/else to prevent falling through to standard sway
+if [ -x "$bindir/swayfx" ]; then
+        "$bindir/swayfx" "$@"
+else
+        "$bindir/sway" "$@"
+fi
