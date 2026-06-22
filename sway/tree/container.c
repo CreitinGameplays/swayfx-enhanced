@@ -636,15 +636,36 @@ void container_begin_destroy(struct sway_container *con) {
 	if (con->view) {
 		ipc_event_window(con, "close");
 	}
-	// The workspace must have the fullscreen pointer cleared so that the
-	// seat code can find an appropriate new focus.
-	if (con->pending.fullscreen_mode == FULLSCREEN_WORKSPACE && con->pending.workspace) {
-		sway_log(SWAY_INFO, "[FULLSCREEN] container_begin_destroy: CLEARING ws->fullscreen (con=%p is FULLSCREEN_WORKSPACE)", (void*)con);
-		con->pending.workspace->fullscreen = NULL;
-	} else {
-		sway_log(SWAY_INFO, "[FULLSCREEN] container_begin_destroy: NOT clearing ws->fullscreen: con=%p fullscreen_mode=%d ws=%p ws->fullscreen=%p",
-			(void*)con, con->pending.fullscreen_mode, (void*)con->pending.workspace,
-			con->pending.workspace ? (void*)con->pending.workspace->fullscreen : NULL);
+	// Clean up any workspace references to this container
+	if (con->pending.workspace) {
+		struct sway_workspace *ws = con->pending.workspace;
+		// Clear prev_fullscreen if it points to this container
+		if (ws->prev_fullscreen == con) {
+			sway_log(SWAY_INFO, "[FULLSCREEN] container_begin_destroy: clearing ws->prev_fullscreen (con=%p)", (void*)con);
+			ws->prev_fullscreen = NULL;
+		}
+		// The workspace must have the fullscreen pointer cleared so that the
+		// seat code can find an appropriate new focus.
+		if (con->pending.fullscreen_mode == FULLSCREEN_WORKSPACE) {
+			sway_log(SWAY_INFO, "[FULLSCREEN] container_begin_destroy: CLEARING ws->fullscreen (con=%p is FULLSCREEN_WORKSPACE)", (void*)con);
+			ws->fullscreen = NULL;
+			// If there was a previous fullscreen container that was displaced by
+			// this one, restore it
+			if (ws->prev_fullscreen && ws->prev_fullscreen != con && !ws->prev_fullscreen->node.destroying) {
+				struct sway_container *prev = ws->prev_fullscreen;
+				ws->prev_fullscreen = NULL;
+				sway_log(SWAY_INFO, "[FULLSCREEN] container_begin_destroy: restoring prev_fullscreen=%p", (void*)prev);
+				container_set_fullscreen(prev, FULLSCREEN_WORKSPACE);
+			}
+			// Clear fullscreen mode so container_detach doesn't clear
+			// ws->fullscreen again
+			con->pending.fullscreen_mode = FULLSCREEN_NONE;
+		} else {
+			sway_log(SWAY_INFO, "[FULLSCREEN] container_begin_destroy: NOT clearing ws->fullscreen: con=%p fullscreen_mode=%d ws=%p ws->fullscreen=%p",
+				(void*)con, con->pending.fullscreen_mode, (void*)ws, (void*)ws->fullscreen);
+		}
+		sway_log(SWAY_INFO, "[FULLSCREEN] container_begin_destroy: ws=%s ws->fullscreen=%p (after clear check)",
+			ws->name, (void*)ws->fullscreen);
 	}
 	if (con->pending.workspace) {
 		sway_log(SWAY_INFO, "[FULLSCREEN] container_begin_destroy: ws=%s ws->fullscreen=%p (after clear check)",
@@ -1695,6 +1716,15 @@ void container_set_fullscreen(struct sway_container *con,
 	switch (mode) {
 	case FULLSCREEN_NONE:
 		container_fullscreen_disable(con);
+		if (con->pending.workspace && con->pending.workspace->prev_fullscreen
+				&& !con->pending.workspace->prev_fullscreen->node.destroying) {
+			struct sway_workspace *ws = con->pending.workspace;
+			struct sway_container *prev = ws->prev_fullscreen;
+			ws->prev_fullscreen = NULL;
+			sway_log(SWAY_INFO, "[FULLSCREEN] container_set_fullscreen: restoring prev_fullscreen=%p after disable",
+				(void*)prev);
+			container_set_fullscreen(prev, FULLSCREEN_WORKSPACE);
+		}
 		break;
 	case FULLSCREEN_WORKSPACE:
 		if (root->fullscreen_global) {
@@ -1703,7 +1733,9 @@ void container_set_fullscreen(struct sway_container *con,
 		if (con->pending.workspace && con->pending.workspace->fullscreen) {
 			sway_log(SWAY_INFO, "[FULLSCREEN] container_set_fullscreen: DISABLING existing ws fullscreen %p before setting new one",
 				(void*)con->pending.workspace->fullscreen);
-			container_fullscreen_disable(con->pending.workspace->fullscreen);
+			struct sway_container *old_fs = con->pending.workspace->fullscreen;
+			con->pending.workspace->prev_fullscreen = old_fs;
+			container_fullscreen_disable(old_fs);
 		}
 		container_fullscreen_workspace(con);
 		break;

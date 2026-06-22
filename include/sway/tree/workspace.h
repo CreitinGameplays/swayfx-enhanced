@@ -33,6 +33,7 @@ struct sway_workspace {
 	} layers;
 
 	struct sway_container *fullscreen;
+	struct sway_container *prev_fullscreen;
 
 	char *name;
 	char *representation;
