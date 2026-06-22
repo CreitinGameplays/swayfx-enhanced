@@ -13,24 +13,33 @@ export ELECTRON_OZONE_PLATFORM_HINT=wayland
 
 bindir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
-# 1. Define a cleanup function to fix the TTY for 'ly'
+# 1. Force-kill any lingering background processes from previous dead sessions
+# (This ensures you always start with a clean state and your real audio device)
+killall -q pipewire wireplumber pipewire-pulse swaync 2>/dev/null || true
+
+# 2. Define a cleanup function to fix the TTY for 'ly' and clean up processes
 cleanup() {
     # Disable exit-on-error for the cleanup phase
     set +e
+
+    # Kill the current session's background processes on logout
+    killall -q pipewire wireplumber pipewire-pulse swaync 2>/dev/null || true
+    killall -9 Xwayland
+
     # Give seatd/elogind a split-second to release the DRM/Input devices
     sleep 0.5
     # Restore terminal properties
     stty sane
     # Attempt to pull keyboard out of raw mode (suppress errors if run as non-root)
-    kbd_mode -a 2>/dev/null
+    kbd_mode -a 2>/dev/null || true
     # Completely reset the TTY
     reset
 }
 
-# 2. Trap the script exit so the cleanup ALWAYS runs, even if Sway crashes
+# 3. Trap the script exit so the cleanup ALWAYS runs, even if Sway crashes
 trap cleanup EXIT INT TERM
 
-# 3. Launch Sway wrapped inside a dedicated D-Bus session
+# 4. Launch Sway wrapped inside a dedicated D-Bus session
 if [ -x "$bindir/swayfx" ]; then
         dbus-run-session "$bindir/swayfx" "$@"
 else
