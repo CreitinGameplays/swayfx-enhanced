@@ -30,9 +30,10 @@ cleanup() {
 # 2. Trap the script exit so the cleanup ALWAYS runs, even if Sway crashes
 trap cleanup EXIT INT TERM
 
-# 3. Launch Sway without 'exec', and use if/else to prevent falling through to standard sway
+# 3. Launch Sway wrapped inside a dedicated D-Bus session
 if [ -x "$bindir/swayfx" ]; then
-        "$bindir/swayfx" "$@"
+        dbus-run-session "$bindir/swayfx" "$@"
 else
-        "$bindir/sway" "$@"
+        dbus-run-session "$bindir/sway" "$@"
 fi
+
