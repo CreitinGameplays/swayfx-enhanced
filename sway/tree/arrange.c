@@ -398,6 +398,7 @@ void arrange_workspace(struct sway_workspace *workspace) {
 	node_set_dirty(&workspace->node);
 	sway_log(SWAY_DEBUG, "Arranging workspace '%s' at %f, %f", workspace->name,
 			workspace->x, workspace->y);
+	sway_log(SWAY_INFO, "[FULLSCREEN] arrange_workspace(%s): ws->fullscreen=%p", workspace->name, (void*)workspace->fullscreen);
 	if (workspace->fullscreen) {
 		struct sway_container *fs = workspace->fullscreen;
 		sway_log(SWAY_INFO, "[DBG arrange_workspace] fullscreen mode for ws=%s fs=%p fs->view=%p fs->fullscreen_mode=%d",

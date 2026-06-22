@@ -639,14 +639,15 @@ void container_begin_destroy(struct sway_container *con) {
 	// The workspace must have the fullscreen pointer cleared so that the
 	// seat code can find an appropriate new focus.
 	if (con->pending.fullscreen_mode == FULLSCREEN_WORKSPACE && con->pending.workspace) {
-		sway_log(SWAY_INFO, "[DBG container_begin_destroy] CLEARING ws->fullscreen (con=%p is FULLSCREEN_WORKSPACE)", (void*)con);
+		sway_log(SWAY_INFO, "[FULLSCREEN] container_begin_destroy: CLEARING ws->fullscreen (con=%p is FULLSCREEN_WORKSPACE)", (void*)con);
 		con->pending.workspace->fullscreen = NULL;
 	} else {
-		sway_log(SWAY_INFO, "[DBG container_begin_destroy] NOT clearing ws->fullscreen: con=%p fullscreen_mode=%d ws=%p",
-			(void*)con, con->pending.fullscreen_mode, (void*)con->pending.workspace);
+		sway_log(SWAY_INFO, "[FULLSCREEN] container_begin_destroy: NOT clearing ws->fullscreen: con=%p fullscreen_mode=%d ws=%p ws->fullscreen=%p",
+			(void*)con, con->pending.fullscreen_mode, (void*)con->pending.workspace,
+			con->pending.workspace ? (void*)con->pending.workspace->fullscreen : NULL);
 	}
 	if (con->pending.workspace) {
-		sway_log(SWAY_INFO, "[DBG container_begin_destroy] ws=%s ws->fullscreen=%p (before emit)",
+		sway_log(SWAY_INFO, "[FULLSCREEN] container_begin_destroy: ws=%s ws->fullscreen=%p (after clear check)",
 			con->pending.workspace->name, (void*)con->pending.workspace->fullscreen);
 	}
 
@@ -687,19 +688,26 @@ void container_begin_destroy(struct sway_container *con) {
 }
 
 void container_reap_empty(struct sway_container *con) {
+	sway_log(SWAY_INFO, "[FULLSCREEN] container_reap_empty con=%p children=%d view=%p",
+		(void*)con, con->pending.children ? con->pending.children->length : -1, (void*)con->view);
 	if (con->view) {
+		sway_log(SWAY_INFO, "[FULLSCREEN] container_reap_empty: con has view, skipping");
 		return;
 	}
 	struct sway_workspace *ws = con->pending.workspace;
 	while (con) {
 		if (con->pending.children->length) {
+			sway_log(SWAY_INFO, "[FULLSCREEN] container_reap_empty: con %p still has %d children, returning",
+				(void*)con, con->pending.children->length);
 			return;
 		}
+		sway_log(SWAY_INFO, "[FULLSCREEN] container_reap_empty: con %p is EMPTY, destroying", (void*)con);
 		struct sway_container *parent = con->pending.parent;
 		container_begin_destroy(con);
 		con = parent;
 	}
 	if (ws) {
+		sway_log(SWAY_INFO, "[FULLSCREEN] container_reap_empty: considering workspace destroy for ws=%p", (void*)ws);
 		workspace_consider_destroy(ws);
 	}
 }
@@ -1309,9 +1317,15 @@ void container_set_floating(struct sway_container *container, bool enable) {
 	struct sway_container *focus = seat_get_focused_container(seat);
 	bool set_focus = focus == container;
 
+	struct sway_container *old_parent = container->pending.parent;
+	sway_log(SWAY_INFO, "[FULLSCREEN] container_set_floating enable=%d con=%p old_parent=%p ws=%p ws->fullscreen=%p",
+		enable, (void*)container, (void*)old_parent, (void*)workspace,
+		workspace ? (void*)workspace->fullscreen : NULL);
+
 	if (enable) {
-		struct sway_container *old_parent = container->pending.parent;
 		container_detach(container);
+		sway_log(SWAY_INFO, "[FULLSCREEN] container_set_floating after detach: ws=%p ws->fullscreen=%p",
+			(void*)workspace, workspace ? (void*)workspace->fullscreen : NULL);
 		workspace_add_floating(workspace, container);
 		if (container->view) {
 			view_set_tiled(container->view, false);
@@ -1631,6 +1645,7 @@ void container_fullscreen_disable(struct sway_container *con) {
 
 	if (con->pending.fullscreen_mode == FULLSCREEN_WORKSPACE) {
 		if (con->pending.workspace) {
+			sway_log(SWAY_INFO, "[FULLSCREEN] container_fullscreen_disable: CLEARING ws->fullscreen (was %p con=%p)", (void*)con->pending.workspace->fullscreen, (void*)con);
 			con->pending.workspace->fullscreen = NULL;
 			if (container_is_floating(con)) {
 				struct sway_output *output =
@@ -1750,13 +1765,22 @@ int container_sibling_index(struct sway_container *child) {
 }
 
 void container_handle_fullscreen_reparent(struct sway_container *con) {
+	sway_log(SWAY_INFO, "[FULLSCREEN] container_handle_fullscreen_reparent con=%p fullscreen_mode=%d ws=%p ws->fullscreen=%p",
+		(void*)con, con->pending.fullscreen_mode, (void*)con->pending.workspace,
+		con->pending.workspace ? (void*)con->pending.workspace->fullscreen : NULL);
 	if (con->pending.fullscreen_mode != FULLSCREEN_WORKSPACE || !con->pending.workspace ||
 			con->pending.workspace->fullscreen == con) {
+		sway_log(SWAY_INFO, "[FULLSCREEN] container_handle_fullscreen_reparent: early return (mode=%d ws=%p same=%d)",
+			con->pending.fullscreen_mode, (void*)con->pending.workspace,
+			con->pending.workspace ? con->pending.workspace->fullscreen == con : -1);
 		return;
 	}
 	if (con->pending.workspace->fullscreen) {
+		sway_log(SWAY_INFO, "[FULLSCREEN] container_handle_fullscreen_reparent: DISABLING existing fullscreen %p",
+			(void*)con->pending.workspace->fullscreen);
 		container_fullscreen_disable(con->pending.workspace->fullscreen);
 	}
+	sway_log(SWAY_INFO, "[FULLSCREEN] container_handle_fullscreen_reparent: SETTING ws->fullscreen = %p", (void*)con);
 	con->pending.workspace->fullscreen = con;
 
 	arrange_workspace(con->pending.workspace);
@@ -1781,7 +1805,11 @@ void container_insert_child(struct sway_container *parent,
 
 void container_add_sibling(struct sway_container *fixed,
 		struct sway_container *active, bool after) {
+	sway_log(SWAY_INFO, "[FULLSCREEN] container_add_sibling fixed=%p active=%p after=%d fixed->parent=%p fixed->ws=%p",
+		(void*)fixed, (void*)active, after, (void*)fixed->pending.parent,
+		(void*)fixed->pending.workspace);
 	if (active->pending.workspace) {
+		sway_log(SWAY_INFO, "[FULLSCREEN] container_add_sibling: active already in workspace, detaching first");
 		container_detach(active);
 	}
 	list_t *siblings = container_get_siblings(fixed);
@@ -1810,13 +1838,15 @@ void container_add_child(struct sway_container *parent,
 }
 
 void container_detach(struct sway_container *child) {
-	sway_log(SWAY_INFO, "[DBG container_detach] child=%p fullscreen_mode=%d ws=%p",
-		(void*)child, child->pending.fullscreen_mode, (void*)child->pending.workspace);
+	sway_log(SWAY_INFO, "[FULLSCREEN] container_detach child=%p fullscreen_mode=%d ws=%p ws->fullscreen=%p",
+		(void*)child, child->pending.fullscreen_mode, (void*)child->pending.workspace,
+		child->pending.workspace ? (void*)child->pending.workspace->fullscreen : NULL);
 	if (child->pending.fullscreen_mode == FULLSCREEN_WORKSPACE) {
-		sway_log(SWAY_INFO, "[DBG container_detach] CLEARING child->pending.workspace->fullscreen (child=%p is FULLSCREEN_WORKSPACE)", (void*)child);
+		sway_log(SWAY_INFO, "[FULLSCREEN] container_detach: CLEARING ws->fullscreen (child=%p is FULLSCREEN_WORKSPACE)", (void*)child);
 		child->pending.workspace->fullscreen = NULL;
 	}
 	if (child->pending.fullscreen_mode == FULLSCREEN_GLOBAL) {
+		sway_log(SWAY_INFO, "[FULLSCREEN] container_detach: CLEARING root->fullscreen_global (child=%p is FULLSCREEN_GLOBAL)", (void*)child);
 		root->fullscreen_global = NULL;
 	}
 

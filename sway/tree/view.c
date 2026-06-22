@@ -686,10 +686,11 @@ static struct sway_container *overlay_restore_target(
 	} else if (ws && ws->fullscreen) {
 		restore_target = ws->fullscreen;
 	}
-	sway_log(SWAY_INFO, "[DBG overlay_restore_target] ws=%s ws->fullscreen=%p fullscreen_global=%p restore_target=%p",
+	sway_log(SWAY_INFO, "[FULLSCREEN] overlay_restore_target ws=%s ws->fullscreen=%p fullscreen_global=%p restore_target=%p",
 		ws ? ws->name : "NULL", ws ? (void*)ws->fullscreen : NULL,
 		(void*)fullscreen_global, (void*)restore_target);
 	if (!restore_target) {
+		sway_log(SWAY_INFO, "[FULLSCREEN] overlay_restore_target: NO restore target, returning NULL");
 		return NULL;
 	}
 	/*
@@ -699,7 +700,7 @@ static struct sway_container *overlay_restore_target(
 	 */
 	struct sway_container *focused_view =
 		seat_get_focus_inactive_view(seat, &restore_target->node);
-	sway_log(SWAY_INFO, "[DBG overlay_restore_target] focused_view=%p (will return %s)",
+	sway_log(SWAY_INFO, "[FULLSCREEN] overlay_restore_target: focused_view=%p (will return %s)",
 		(void*)focused_view, focused_view ? "focused_view" : "restore_target");
 	/*
 	 * If no focusable view was found inside the fullscreen wrapper, return
@@ -1046,9 +1047,14 @@ void view_map(struct sway_view *view, struct wlr_surface *wlr_surface,
 	}
 
 	struct wlr_box full_output_overlay_box = {0};
-	bool full_output_overlay =
-		view_would_join_tabbed_or_stacked(ws, target_sibling) &&
-		view_get_full_output_overlay_box(view, ws, &full_output_overlay_box);
+	bool _would_join = view_would_join_tabbed_or_stacked(ws, target_sibling);
+	bool _has_overlay_box = view_get_full_output_overlay_box(view, ws, &full_output_overlay_box);
+	bool full_output_overlay = _would_join && _has_overlay_box;
+	sway_log(SWAY_INFO, "[FULLSCREEN] view_map overlay check: ws=%p ws->fullscreen=%p target_sibling=%p "
+		"would_join=%d has_box=%d full_output_overlay=%d wants_floating=%d",
+		(void*)ws, ws ? (void*)ws->fullscreen : NULL, (void*)target_sibling,
+		_would_join, _has_overlay_box, full_output_overlay,
+		view->impl->wants_floating ? view->impl->wants_floating(view) : -1);
 	if (full_output_overlay ||
 			(view->impl->wants_floating && view->impl->wants_floating(view))) {
 		view->container->full_output_overlay = full_output_overlay;
@@ -1086,8 +1092,12 @@ void view_map(struct sway_view *view, struct wlr_surface *wlr_surface,
 		arrange_workspace(view->container->pending.workspace);
 	} else {
 		if (container->pending.parent) {
+			sway_log(SWAY_INFO, "[FULLSCREEN] view_map: arranging parent=%p", (void*)container->pending.parent);
 			arrange_container(container->pending.parent);
 		} else if (container->pending.workspace) {
+			sway_log(SWAY_INFO, "[FULLSCREEN] view_map: arranging ws=%s ws->fullscreen=%p",
+				container->pending.workspace->name,
+				(void*)container->pending.workspace->fullscreen);
 			arrange_workspace(container->pending.workspace);
 		}
 	}
@@ -1095,6 +1105,8 @@ void view_map(struct sway_view *view, struct wlr_surface *wlr_surface,
 	view_execute_criteria(view);
 
 	bool set_focus = fullscreen || full_output_overlay || should_focus(view);
+	sway_log(SWAY_INFO, "[FULLSCREEN] view_map: set_focus=%d fullscreen=%d full_output_overlay=%d should_focus=%d",
+		set_focus, fullscreen, full_output_overlay, should_focus(view));
 
 #if WLR_HAS_XWAYLAND
 	struct wlr_xwayland_surface *xsurface;
@@ -1123,14 +1135,13 @@ void view_map(struct sway_view *view, struct wlr_surface *wlr_surface,
 }
 
 void view_unmap(struct sway_view *view) {
-	sway_log(SWAY_INFO, "[DBG view_unmap] ENTER view=%p container=%p full_output_overlay=%d",
+	sway_log(SWAY_INFO, "[FULLSCREEN] view_unmap ENTER view=%p container=%p full_output_overlay=%d",
 		(void*)view, (void*)view->container,
 		view->container ? view->container->full_output_overlay : -1);
 	if (view->container && view->container->pending.workspace) {
 		struct sway_workspace *w = view->container->pending.workspace;
-		sway_log(SWAY_INFO, "[DBG view_unmap] ws=%s ws->fullscreen=%p ws->current.fullscreen=%p",
-			w->name, (void*)w->fullscreen, (void*)w->current.fullscreen);
-		sway_log(SWAY_INFO, "[DBG view_unmap] root->fullscreen_global=%p",
+		sway_log(SWAY_INFO, "[FULLSCREEN] view_unmap ENTER ws=%s ws->fullscreen=%p ws->current.fullscreen=%p root_fs_global=%p",
+			w->name, (void*)w->fullscreen, (void*)w->current.fullscreen,
 			(void*)root->fullscreen_global);
 	}
 
@@ -1161,59 +1172,55 @@ void view_unmap(struct sway_view *view) {
 	view->container->animation_state.close_title_bar =
 		view_close_animation_has_title_bar(view);
 	container_begin_destroy(view->container);
-	sway_log(SWAY_INFO, "[DBG view_unmap] after container_begin_destroy");
-	if (ws) {
-		sway_log(SWAY_INFO, "[DBG view_unmap] ws=%s ws->fullscreen=%p ws->current.fullscreen=%p",
-			ws->name, (void*)ws->fullscreen, (void*)ws->current.fullscreen);
-	}
+	sway_log(SWAY_INFO, "[FULLSCREEN] view_unmap after container_begin_destroy: ws=%s ws->fullscreen=%p ws->current.fullscreen=%p",
+		ws ? ws->name : "NULL", ws ? (void*)ws->fullscreen : NULL,
+		ws ? (void*)ws->current.fullscreen : NULL);
 
 	if (parent) {
+		sway_log(SWAY_INFO, "[FULLSCREEN] view_unmap: calling container_reap_empty(parent=%p)", (void*)parent);
 		container_reap_empty(parent);
 	} else if (ws) {
 		workspace_consider_destroy(ws);
 	}
 
-	sway_log(SWAY_INFO, "[DBG view_unmap] before arrange: ws=%p root_fullscreen_global=%p",
-		(void*)ws, (void*)root->fullscreen_global);
+	sway_log(SWAY_INFO, "[FULLSCREEN] view_unmap before arrange: ws=%p ws->fullscreen=%p root_fullscreen_global=%p",
+		(void*)ws, ws ? (void*)ws->fullscreen : NULL, (void*)root->fullscreen_global);
 	if (root->fullscreen_global) {
-		// Container may have been a child of the root fullscreen container
-		sway_log(SWAY_INFO, "[DBG view_unmap] calling arrange_root()");
+		sway_log(SWAY_INFO, "[FULLSCREEN] view_unmap: calling arrange_root()");
 		arrange_root();
 	} else if (ws && !ws->node.destroying) {
-		sway_log(SWAY_INFO, "[DBG view_unmap] calling arrange_workspace(%s)", ws->name);
-		sway_log(SWAY_INFO, "[DBG view_unmap]  pre-arrange ws->fullscreen=%p ws->current.fullscreen=%p",
-			(void*)ws->fullscreen, (void*)ws->current.fullscreen);
+		sway_log(SWAY_INFO, "[FULLSCREEN] view_unmap: calling arrange_workspace(%s)", ws->name);
+		sway_log(SWAY_INFO, "[FULLSCREEN] view_unmap pre-arrange ws->fullscreen=%p", (void*)ws->fullscreen);
 		arrange_workspace(ws);
-		sway_log(SWAY_INFO, "[DBG view_unmap]  post-arrange ws->fullscreen=%p ws->current.fullscreen=%p",
-			(void*)ws->fullscreen, (void*)ws->current.fullscreen);
+		sway_log(SWAY_INFO, "[FULLSCREEN] view_unmap post-arrange ws->fullscreen=%p", (void*)ws->fullscreen);
 		workspace_detect_urgent(ws);
 	}
 
 	if (restore_focus_after_destroy) {
-		sway_log(SWAY_INFO, "[DBG view_unmap] restoring focus after overlay destroy");
+		sway_log(SWAY_INFO, "[FULLSCREEN] view_unmap: restoring focus after overlay destroy");
 		wl_list_for_each(seat, &server.input->seats, link) {
 			struct sway_container *restore_target =
 				overlay_restore_target(ws, fullscreen_global, seat);
-			sway_log(SWAY_INFO, "[DBG view_unmap] seat=%s restore_target=%p",
+			sway_log(SWAY_INFO, "[FULLSCREEN] view_unmap seat=%s restore_target=%p",
 				seat->wlr_seat->name, (void*)restore_target);
 			if (!restore_target) {
-				sway_log(SWAY_INFO, "[DBG view_unmap] restore_target NULL, falling back to seat_get_focus_inactive");
+				sway_log(SWAY_INFO, "[FULLSCREEN] view_unmap: restore_target NULL, falling back");
 				struct sway_node *node = seat_get_focus_inactive(seat,
 					ws ? &ws->node : &root->node);
-				sway_log(SWAY_INFO, "[DBG view_unmap] fallback node=%p type=%d",
+				sway_log(SWAY_INFO, "[FULLSCREEN] view_unmap fallback node=%p type=%d",
 					(void*)node, node ? (int)node->type : -1);
 				if (node) {
 					seat_set_focus(seat, node);
 				}
 				continue;
 			}
-			sway_log(SWAY_INFO, "[DBG view_unmap] restoring focus to restore_target=%p view=%p",
+			sway_log(SWAY_INFO, "[FULLSCREEN] view_unmap seat_set_focus_container(restore_target=%p view=%p)",
 				(void*)restore_target,
 				restore_target->view ? (void*)restore_target->view : NULL);
 			seat_set_focus_container(seat, restore_target);
 			seat_consider_warp_to_focus(seat);
 		}
-		sway_log(SWAY_INFO, "[DBG view_unmap] focus restoration complete");
+		sway_log(SWAY_INFO, "[FULLSCREEN] view_unmap focus restoration complete");
 	}
 
 	struct sway_seat *seat2;
@@ -1230,8 +1237,8 @@ void view_unmap(struct sway_view *view) {
 	}
 
 	transaction_commit_dirty();
-	sway_log(SWAY_INFO, "[DBG view_unmap] EXIT view=%p ws=%s ws->fullscreen=%p ws->current.fullscreen=%p",
-		(void*)view, ws ? ws->name : "NULL",
+	sway_log(SWAY_INFO, "[FULLSCREEN] view_unmap EXIT ws=%s ws->fullscreen=%p ws->current.fullscreen=%p",
+		ws ? ws->name : "NULL",
 		ws ? (void*)ws->fullscreen : NULL,
 		ws ? (void*)ws->current.fullscreen : NULL);
 	view->surface = NULL;

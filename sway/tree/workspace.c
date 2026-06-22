@@ -901,6 +901,9 @@ void workspace_detach(struct sway_workspace *workspace) {
 
 struct sway_container *workspace_add_tiling(struct sway_workspace *workspace,
 		struct sway_container *con) {
+	sway_log(SWAY_INFO, "[FULLSCREEN] workspace_add_tiling con=%p ws=%p ws->fullscreen=%p con->fullscreen_mode=%d",
+		(void*)con, (void*)workspace, workspace ? (void*)workspace->fullscreen : NULL,
+		con->pending.fullscreen_mode);
 	if (con->pending.workspace) {
 		struct sway_container *old_parent = con->pending.parent;
 		container_detach(con);
@@ -924,14 +927,20 @@ struct sway_container *workspace_add_tiling(struct sway_workspace *workspace,
 void workspace_add_floating(struct sway_workspace *workspace,
 		struct sway_container *con) {
 	if (con->pending.workspace) {
+		sway_log(SWAY_INFO, "[FULLSCREEN] workspace_add_floating: detaching con from workspace first");
 		container_detach(con);
 	}
+	sway_log(SWAY_INFO, "[FULLSCREEN] workspace_add_floating con=%p ws=%p ws->fullscreen=%p con->fullscreen_mode=%d",
+		(void*)con, (void*)workspace, workspace ? (void*)workspace->fullscreen : NULL,
+		con->pending.fullscreen_mode);
 	list_add(workspace->floating, con);
 	con->pending.workspace = workspace;
 	container_for_each_child(con, set_workspace, NULL);
 	container_handle_fullscreen_reparent(con);
 	node_set_dirty(&workspace->node);
 	node_set_dirty(&con->node);
+	sway_log(SWAY_INFO, "[FULLSCREEN] workspace_add_floating DONE: ws->fullscreen=%p ws->floating.len=%d",
+		(void*)workspace->fullscreen, workspace->floating->length);
 }
 
 void workspace_insert_tiling_direct(struct sway_workspace *workspace,

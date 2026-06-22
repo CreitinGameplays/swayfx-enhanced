@@ -178,7 +178,7 @@ static void copy_workspace_state(struct sway_workspace *ws,
 	struct sway_workspace_state *state = &instruction->workspace_state;
 
 	state->fullscreen = ws->fullscreen;
-	sway_log(SWAY_DEBUG, "[DBG copy_workspace_state] ws=%s ws->fullscreen=%p state->fullscreen=%p",
+	sway_log(SWAY_INFO, "[FULLSCREEN] copy_workspace_state ws=%s ws->fullscreen=%p state->fullscreen=%p",
 		ws->name, (void*)ws->fullscreen, (void*)state->fullscreen);
 	state->x = ws->x;
 	state->y = ws->y;
@@ -294,12 +294,14 @@ static void apply_output_state(struct sway_output *output,
 
 static void apply_workspace_state(struct sway_workspace *ws,
 		struct sway_workspace_state *state) {
-	sway_log(SWAY_DEBUG, "[DBG apply_workspace_state] ws=%s state->fullscreen=%p ws->current.fullscreen WAS=%p",
-		ws->name, (void*)state->fullscreen, (void*)ws->current.fullscreen);
+	sway_log(SWAY_INFO, "[FULLSCREEN] apply_workspace_state ws=%s state->fullscreen=%p prev_current_ws_fs=%p tiling.len=%d floating.len=%d",
+		ws->name, (void*)state->fullscreen, (void*)ws->current.fullscreen,
+		state->tiling ? state->tiling->length : -1,
+		state->floating ? state->floating->length : -1);
 	list_free(ws->current.floating);
 	list_free(ws->current.tiling);
 	memcpy(&ws->current, state, sizeof(struct sway_workspace_state));
-	sway_log(SWAY_DEBUG, "[DBG apply_workspace_state] ws=%s ws->current.fullscreen NOW=%p",
+	sway_log(SWAY_INFO, "[FULLSCREEN] apply_workspace_state DONE: ws=%s ws->current.fullscreen=%p",
 		ws->name, (void*)ws->current.fullscreen);
 }
 
@@ -915,8 +917,9 @@ static void disable_workspace(struct sway_workspace *ws) {
 	// if any containers were just moved to a disabled workspace it will
 	// have the parent of the old workspace. Move the workspace so that it won't
 	// be shown.
-	sway_log(SWAY_INFO, "[DBG disable_workspace] ws=%s floating->length=%d tiling->length=%d",
-		ws->name, ws->current.floating ? ws->current.floating->length : 0,
+	sway_log(SWAY_INFO, "[FULLSCREEN] disable_workspace ws=%s ws->current.fullscreen=%p floating.len=%d tiling.len=%d",
+		ws->name, (void*)ws->current.fullscreen,
+		ws->current.floating ? ws->current.floating->length : 0,
 		ws->current.tiling ? ws->current.tiling->length : 0);
 	for (int i = 0; i < ws->current.tiling->length; i++) {
 		struct sway_container *child = ws->current.tiling->items[i];
@@ -955,8 +958,13 @@ static void arrange_output(struct sway_output *output, int width, int height) {
 
 		if (activated) {
 			struct sway_container *fs = child->current.fullscreen;
-			sway_log(SWAY_INFO, "[DBG arrange_output] workspace=%s fullscreen=%p fs_view=%p enabling fullscreen_layer=%d",
-					child->name, (void*)fs, fs && fs->view ? (void*)fs->view : NULL, fs ? 1 : 0);
+			sway_log(SWAY_INFO, "[FULLSCREEN] arrange_output ws=%s fs=%p fs->fullscreen_mode=%d fs->view=%p "
+				"tiling_len=%d floating_len=%d",
+				child->name, (void*)fs,
+				fs ? (int)fs->pending.fullscreen_mode : -1,
+				fs && fs->view ? (void*)fs->view : NULL,
+				child->current.tiling ? child->current.tiling->length : -1,
+				child->current.floating ? child->current.floating->length : -1);
 			wlr_scene_node_set_enabled(&child->layers.tiling->node, !fs);
 			wlr_scene_node_set_enabled(&child->layers.fullscreen->node, fs);
 

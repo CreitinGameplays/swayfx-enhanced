@@ -244,12 +244,12 @@ static void handle_seat_node_destroy(struct wl_listener *listener, void *data) {
 	struct sway_node *parent = node_get_parent(node);
 	struct sway_node *focus = seat_get_focus(seat);
 
-	sway_log(SWAY_INFO, "[DBG handle_seat_node_destroy] seat=%s node=%p type=%d parent=%p focus=%p",
+	sway_log(SWAY_INFO, "[FULLSCREEN] handle_seat_node_destroy seat=%s node=%p type=%d parent=%p focus=%p",
 		seat->wlr_seat->name, (void*)node, node ? (int)node->type : -1,
 		(void*)parent, (void*)focus);
 	if (node->type == N_CONTAINER && node->sway_container->pending.workspace) {
 		struct sway_workspace *w = node->sway_container->pending.workspace;
-		sway_log(SWAY_INFO, "[DBG handle_seat_node_destroy] ws=%s ws->fullscreen=%p ws->current.fullscreen=%p",
+		sway_log(SWAY_INFO, "[FULLSCREEN] handle_seat_node_destroy ws=%s ws->fullscreen=%p ws->current.fullscreen=%p",
 			w->name, (void*)w->fullscreen, (void*)w->current.fullscreen);
 	}
 
@@ -1209,8 +1209,14 @@ static void seat_set_workspace_focus(struct sway_seat *seat, struct sway_node *n
 		node->sway_container : NULL;
 
 	// Deny setting focus to a view which is hidden by a fullscreen container or global
-	if (container && container_obstructing_fullscreen_container(container)) {
-		return;
+	if (container) {
+		struct sway_container *obstructing = container_obstructing_fullscreen_container(container);
+		sway_log(SWAY_INFO, "[FULLSCREEN] seat_set_workspace_focus: container=%p container_obstructing_fullscreen_container=%p",
+			(void*)container, (void*)obstructing);
+		if (obstructing) {
+			sway_log(SWAY_INFO, "[FULLSCREEN] seat_set_workspace_focus: ABORT due to obstruction by %p", (void*)obstructing);
+			return;
+		}
 	}
 
 	// Deny setting focus to a workspace node when using fullscreen global
