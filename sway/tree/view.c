@@ -743,13 +743,23 @@ static bool view_get_full_output_overlay_box(struct sway_view *view,
 static bool view_would_join_tabbed_or_stacked(struct sway_workspace *ws,
 		struct sway_container *target_sibling) {
 	if (!target_sibling) {
+		sway_log(SWAY_INFO, "[FULLSCREEN] view_would_join_tabbed_or_stacked: target_sibling=NULL, returning false");
 		return false;
 	}
+	sway_log(SWAY_INFO, "[FULLSCREEN] view_would_join_tabbed_or_stacked: ws=%p ws_layout=%d target_sibling=%p "
+		"parent=%p parent_layout=%d",
+		(void*)ws, ws ? (int)ws->layout : -1,
+		(void*)target_sibling,
+		(void*)target_sibling->pending.parent,
+		target_sibling->pending.parent ? (int)target_sibling->pending.parent->pending.layout : -1);
 	if (ws && (ws->layout == L_TABBED || ws->layout == L_STACKED)) {
+		sway_log(SWAY_INFO, "[FULLSCREEN] view_would_join_tabbed_or_stacked: ws itself is tabbed/stacked, returning true");
 		return true;
 	}
 	enum sway_container_layout layout =
 		container_parent_layout(target_sibling);
+	sway_log(SWAY_INFO, "[FULLSCREEN] view_would_join_tabbed_or_stacked: parent_layout=%d, returning %d",
+		layout, layout == L_TABBED || layout == L_STACKED);
 	return layout == L_TABBED || layout == L_STACKED;
 }
 

@@ -1684,6 +1684,10 @@ void container_fullscreen_disable(struct sway_container *con) {
 
 void container_set_fullscreen(struct sway_container *con,
 		enum sway_fullscreen_mode mode) {
+	sway_log(SWAY_INFO, "[FULLSCREEN] container_set_fullscreen con=%p mode=%d current_mode=%d ws=%p existing_ws_fs=%p",
+		(void*)con, mode, con->pending.fullscreen_mode,
+		(void*)con->pending.workspace,
+		con->pending.workspace ? (void*)con->pending.workspace->fullscreen : NULL);
 	if (con->pending.fullscreen_mode == mode) {
 		return;
 	}
@@ -1697,6 +1701,8 @@ void container_set_fullscreen(struct sway_container *con,
 			container_fullscreen_disable(root->fullscreen_global);
 		}
 		if (con->pending.workspace && con->pending.workspace->fullscreen) {
+			sway_log(SWAY_INFO, "[FULLSCREEN] container_set_fullscreen: DISABLING existing ws fullscreen %p before setting new one",
+				(void*)con->pending.workspace->fullscreen);
 			container_fullscreen_disable(con->pending.workspace->fullscreen);
 		}
 		container_fullscreen_workspace(con);
@@ -1738,12 +1744,19 @@ bool container_is_fullscreen_or_child(struct sway_container *container) {
 }
 
 enum sway_container_layout container_parent_layout(struct sway_container *con) {
+	sway_log(SWAY_INFO, "[FULLSCREEN] container_parent_layout con=%p parent=%p ws=%p",
+		(void*)con, (void*)con->pending.parent, (void*)con->pending.workspace);
 	if (con->pending.parent) {
+		sway_log(SWAY_INFO, "[FULLSCREEN] container_parent_layout: returning parent->layout=%d",
+			(int)con->pending.parent->pending.layout);
 		return con->pending.parent->pending.layout;
 	}
 	if (con->pending.workspace) {
+		sway_log(SWAY_INFO, "[FULLSCREEN] container_parent_layout: returning ws->layout=%d",
+			(int)con->pending.workspace->layout);
 		return con->pending.workspace->layout;
 	}
+	sway_log(SWAY_INFO, "[FULLSCREEN] container_parent_layout: no parent or workspace, returning L_NONE");
 	return L_NONE;
 }
 
