@@ -244,6 +244,15 @@ static void handle_seat_node_destroy(struct wl_listener *listener, void *data) {
 	struct sway_node *parent = node_get_parent(node);
 	struct sway_node *focus = seat_get_focus(seat);
 
+	sway_log(SWAY_INFO, "[DBG handle_seat_node_destroy] seat=%s node=%p type=%d parent=%p focus=%p",
+		seat->wlr_seat->name, (void*)node, node ? (int)node->type : -1,
+		(void*)parent, (void*)focus);
+	if (node->type == N_CONTAINER && node->sway_container->pending.workspace) {
+		struct sway_workspace *w = node->sway_container->pending.workspace;
+		sway_log(SWAY_INFO, "[DBG handle_seat_node_destroy] ws=%s ws->fullscreen=%p ws->current.fullscreen=%p",
+			w->name, (void*)w->fullscreen, (void*)w->current.fullscreen);
+	}
+
 	if (node->type == N_WORKSPACE) {
 		seat_node_destroy(seat_node);
 		// If an unmanaged or layer surface is focused when an output gets
@@ -306,6 +315,13 @@ static void handle_seat_node_destroy(struct wl_listener *listener, void *data) {
 		return;
 	}
 
+	sway_log(SWAY_INFO, "[DBG handle_seat_node_destroy] needs_new_focus=%d next_focus=%p type=%d",
+		needs_new_focus, (void*)next_focus, next_focus ? (int)next_focus->type : -1);
+	if (next_focus && next_focus->type == N_CONTAINER && next_focus->sway_container->view) {
+		sway_log(SWAY_INFO, "[DBG handle_seat_node_destroy] next_focus is view=%p",
+			(void*)next_focus->sway_container->view);
+	}
+
 	if (needs_new_focus) {
 		// Make sure the workspace IPC event gets sent
 		if (node->type == N_CONTAINER && node->sway_container->scratchpad) {
@@ -314,8 +330,10 @@ static void handle_seat_node_destroy(struct wl_listener *listener, void *data) {
 		// The structure change might have caused it to move up to the top of
 		// the focus stack without sending focus notifications to the view
 		if (seat_get_focus(seat) == next_focus) {
+			sway_log(SWAY_INFO, "[DBG handle_seat_node_destroy] calling seat_send_focus (same as current)");
 			seat_send_focus(next_focus, seat);
 		} else {
+			sway_log(SWAY_INFO, "[DBG handle_seat_node_destroy] calling seat_set_focus");
 			seat_set_focus(seat, next_focus);
 		}
 	} else {
@@ -1151,12 +1169,23 @@ static void seat_set_workspace_focus(struct sway_seat *seat, struct sway_node *n
 			(void*)last_focus, last_focus ? (int)last_focus->type : -1,
 			(void*)node, node ? (int)node->type : -1);
 	if (last_focus == node) {
-		if (node && node->type == N_CONTAINER && node->sway_container->view &&
+		if (node && node->type == N_CONTAINER &&
+				node->sway_container->view &&
 				seat->wlr_seat->keyboard_state.focused_surface !=
 					node->sway_container->view->surface) {
 			// The focus stack already points at this view, but the keyboard seat
 			// may have been left on a layer surface or otherwise lost its enter.
 			seat_send_focus(node, seat);
+		} else if (node && node->type == N_CONTAINER &&
+				!node->sway_container->view) {
+			// Tabbed/stacked wrapper: restore keyboard focus to the inner view
+			struct sway_container *view_con =
+				seat_get_focus_inactive_view(seat, node);
+			if (view_con && view_con->view &&
+					seat->wlr_seat->keyboard_state.focused_surface !=
+						view_con->view->surface) {
+				seat_send_focus(&view_con->node, seat);
+			}
 		}
 		return;
 	}
@@ -1225,6 +1254,15 @@ static void seat_set_workspace_focus(struct sway_seat *seat, struct sway_node *n
 	if (container) {
 		seat_set_raw_focus(seat, &container->node);
 		seat_send_focus(&container->node, seat);
+		if (!container->view) {
+			// Tabbed/stacked wrapper has no view; send keyboard focus to
+			// the first inactive child view so the client receives enter.
+			struct sway_container *view_con =
+				seat_get_focus_inactive_view(seat, &container->node);
+			if (view_con) {
+				seat_send_focus(&view_con->node, seat);
+			}
+		}
 	}
 
 	// emit ipc events

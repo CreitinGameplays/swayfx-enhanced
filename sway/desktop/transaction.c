@@ -178,6 +178,8 @@ static void copy_workspace_state(struct sway_workspace *ws,
 	struct sway_workspace_state *state = &instruction->workspace_state;
 
 	state->fullscreen = ws->fullscreen;
+	sway_log(SWAY_DEBUG, "[DBG copy_workspace_state] ws=%s ws->fullscreen=%p state->fullscreen=%p",
+		ws->name, (void*)ws->fullscreen, (void*)state->fullscreen);
 	state->x = ws->x;
 	state->y = ws->y;
 	state->width = ws->width;
@@ -292,9 +294,13 @@ static void apply_output_state(struct sway_output *output,
 
 static void apply_workspace_state(struct sway_workspace *ws,
 		struct sway_workspace_state *state) {
+	sway_log(SWAY_DEBUG, "[DBG apply_workspace_state] ws=%s state->fullscreen=%p ws->current.fullscreen WAS=%p",
+		ws->name, (void*)state->fullscreen, (void*)ws->current.fullscreen);
 	list_free(ws->current.floating);
 	list_free(ws->current.tiling);
 	memcpy(&ws->current, state, sizeof(struct sway_workspace_state));
+	sway_log(SWAY_DEBUG, "[DBG apply_workspace_state] ws=%s ws->current.fullscreen NOW=%p",
+		ws->name, (void*)ws->current.fullscreen);
 }
 
 static void apply_container_state(struct sway_container *container,
@@ -909,6 +915,9 @@ static void disable_workspace(struct sway_workspace *ws) {
 	// if any containers were just moved to a disabled workspace it will
 	// have the parent of the old workspace. Move the workspace so that it won't
 	// be shown.
+	sway_log(SWAY_INFO, "[DBG disable_workspace] ws=%s floating->length=%d tiling->length=%d",
+		ws->name, ws->current.floating ? ws->current.floating->length : 0,
+		ws->current.tiling ? ws->current.tiling->length : 0);
 	for (int i = 0; i < ws->current.tiling->length; i++) {
 		struct sway_container *child = ws->current.tiling->items[i];
 
@@ -918,6 +927,9 @@ static void disable_workspace(struct sway_workspace *ws) {
 
 	for (int i = 0; i < ws->current.floating->length; i++) {
 		struct sway_container *floater = ws->current.floating->items[i];
+		sway_log(SWAY_INFO, "[DBG disable_workspace] floater[%d]=%p full_output_overlay=%d fullscreen_mode=%d",
+			i, (void*)floater, floater->full_output_overlay,
+			floater->pending.fullscreen_mode);
 		wlr_scene_node_reparent(&floater->scene_tree->node,
 			get_floating_layer(floater));
 		disable_container(floater);
@@ -943,7 +955,7 @@ static void arrange_output(struct sway_output *output, int width, int height) {
 
 		if (activated) {
 			struct sway_container *fs = child->current.fullscreen;
-			sway_log(SWAY_DEBUG, "arrange_output: workspace=%s fullscreen=%p fs_view=%p enabling fullscreen_layer=%d",
+			sway_log(SWAY_INFO, "[DBG arrange_output] workspace=%s fullscreen=%p fs_view=%p enabling fullscreen_layer=%d",
 					child->name, (void*)fs, fs && fs->view ? (void*)fs->view : NULL, fs ? 1 : 0);
 			wlr_scene_node_set_enabled(&child->layers.tiling->node, !fs);
 			wlr_scene_node_set_enabled(&child->layers.fullscreen->node, fs);
@@ -1361,6 +1373,9 @@ static void transaction_commit_pending(void) {
 	struct sway_transaction *transaction = server.pending_transaction;
 	server.pending_transaction = NULL;
 	server.queued_transaction = transaction;
+	sway_log(SWAY_INFO, "[DBG transaction_commit_pending] transaction=%p num_instructions=%d",
+		(void*)transaction,
+		transaction ? transaction->instructions->length : -1);
 	transaction_commit(transaction);
 	transaction_progress();
 }

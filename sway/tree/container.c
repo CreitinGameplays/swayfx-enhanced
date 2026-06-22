@@ -639,8 +639,23 @@ void container_begin_destroy(struct sway_container *con) {
 	// The workspace must have the fullscreen pointer cleared so that the
 	// seat code can find an appropriate new focus.
 	if (con->pending.fullscreen_mode == FULLSCREEN_WORKSPACE && con->pending.workspace) {
+		sway_log(SWAY_INFO, "[DBG container_begin_destroy] CLEARING ws->fullscreen (con=%p is FULLSCREEN_WORKSPACE)", (void*)con);
 		con->pending.workspace->fullscreen = NULL;
+	} else {
+		sway_log(SWAY_INFO, "[DBG container_begin_destroy] NOT clearing ws->fullscreen: con=%p fullscreen_mode=%d ws=%p",
+			(void*)con, con->pending.fullscreen_mode, (void*)con->pending.workspace);
 	}
+	if (con->pending.workspace) {
+		sway_log(SWAY_INFO, "[DBG container_begin_destroy] ws=%s ws->fullscreen=%p (before emit)",
+			con->pending.workspace->name, (void*)con->pending.workspace->fullscreen);
+	}
+
+	// Disable the scene tree so the container no longer intercepts pointer
+	// input. Otherwise the dangling scene buffer (with view->surface already
+	// NULL) would be hit by node_at_coords and clear pointer focus instead
+	// of falling through to the fullscreen container below.
+	wlr_scene_node_set_enabled(&con->scene_tree->node, false);
+
 	if (con->scratchpad && con->pending.fullscreen_mode == FULLSCREEN_GLOBAL) {
 		container_fullscreen_disable(con);
 	}
@@ -745,6 +760,14 @@ struct sway_container *container_obstructing_fullscreen_container(
 	if (workspace && workspace->fullscreen &&
 			!container_is_fullscreen_or_child(toplevel)) {
 		if (container_is_transient_for(toplevel, workspace->fullscreen)) {
+			return NULL;
+		}
+		// If the container being checked IS the fullscreen container (or a
+		// child of it), it should not be considered obstructed — focusing it
+		// is legitimate. This happens when a child view inside a tabbed/stacked
+		// wrapper has fullscreen_mode set directly.
+		if (container == workspace->fullscreen ||
+				container_has_ancestor(container, workspace->fullscreen)) {
 			return NULL;
 		}
 		return workspace->fullscreen;
@@ -1787,7 +1810,10 @@ void container_add_child(struct sway_container *parent,
 }
 
 void container_detach(struct sway_container *child) {
+	sway_log(SWAY_INFO, "[DBG container_detach] child=%p fullscreen_mode=%d ws=%p",
+		(void*)child, child->pending.fullscreen_mode, (void*)child->pending.workspace);
 	if (child->pending.fullscreen_mode == FULLSCREEN_WORKSPACE) {
+		sway_log(SWAY_INFO, "[DBG container_detach] CLEARING child->pending.workspace->fullscreen (child=%p is FULLSCREEN_WORKSPACE)", (void*)child);
 		child->pending.workspace->fullscreen = NULL;
 	}
 	if (child->pending.fullscreen_mode == FULLSCREEN_GLOBAL) {

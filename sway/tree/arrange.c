@@ -400,12 +400,17 @@ void arrange_workspace(struct sway_workspace *workspace) {
 			workspace->x, workspace->y);
 	if (workspace->fullscreen) {
 		struct sway_container *fs = workspace->fullscreen;
+		sway_log(SWAY_INFO, "[DBG arrange_workspace] fullscreen mode for ws=%s fs=%p fs->view=%p fs->fullscreen_mode=%d",
+			workspace->name, (void*)fs,
+			fs->view ? (void*)fs->view : NULL,
+			fs->pending.fullscreen_mode);
 		fs->pending.x = output->lx;
 		fs->pending.y = output->ly;
 		fs->pending.width = output->width;
 		fs->pending.height = output->height;
 		arrange_container(fs);
 	} else {
+		sway_log(SWAY_INFO, "[DBG arrange_workspace] NO fullscreen for ws=%s", workspace->name);
 		struct wlr_box box;
 		workspace_get_box(workspace, &box);
 		arrange_children(workspace->tiling, workspace->layout, &box);
