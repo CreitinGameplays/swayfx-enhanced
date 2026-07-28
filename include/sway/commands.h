@@ -202,6 +202,7 @@ sway_cmd cmd_reject;
 sway_cmd cmd_reload;
 sway_cmd cmd_rename;
 sway_cmd cmd_resize;
+sway_cmd cmd_dwindle;
 sway_cmd cmd_scroll;
 sway_cmd cmd_scrollable_tiling_touchpad_pinch_resize;
 sway_cmd cmd_scrollable_tiling_touchpad_pinch_resize_factor;

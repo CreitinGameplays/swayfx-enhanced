@@ -572,7 +572,7 @@ struct sway_config {
 	bool show_marks;
 	enum alignment title_align;
 	bool primary_selection;
-
+	bool dwindle;
 	bool tiling_drag;
 	int tiling_drag_threshold;
 	bool scrollable_tiling_touchpad_scroll;

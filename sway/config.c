@@ -290,6 +290,7 @@ static void config_defaults(struct sway_config *config) {
 	config->title_align = ALIGN_LEFT;
 	config->tiling_drag = true;
 	config->tiling_drag_threshold = 9;
+	config->dwindle = false;
 	config->scrollable_tiling_touchpad_scroll = false;
 	config->scrollable_tiling_touchpad_scroll_factor = 1.0f;
 	config->scrollable_tiling_touchpad_pinch_resize = false;
