@@ -155,6 +155,8 @@ sway_sources = files(
 	'commands/urgent.c',
 	'commands/workspace.c',
 	'commands/workspace_layout.c',
+	'commands/workspace_switch_anim.c',
+	'commands/workspace_anim_duration_ms.c',
 	'commands/ws_auto_back_and_forth.c',
 	'commands/xwayland.c',
 

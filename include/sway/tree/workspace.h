@@ -63,6 +63,14 @@ struct sway_workspace {
 		bool interactive_resize;
 	} scroll_animation_state;
 
+	struct {
+		struct animation *animation;
+		int from_x;
+		int target_x;
+		bool target_x_initialized;
+		bool active;
+	} switch_animation_state;
+
 	struct sway_workspace_state current;
 };
 

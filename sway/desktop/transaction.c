@@ -906,6 +906,97 @@ static int get_animated_scroll_workspace_x(struct sway_workspace *ws,
 	return ws->scroll_animation_state.target_x;
 }
 
+static void stop_workspace_switch_animation(struct sway_workspace *ws) {
+	struct animation *animation = ws->switch_animation_state.animation;
+	if (animation && animation->initialized) {
+		animation->initialized = false;
+		wl_list_remove(&animation->link);
+	}
+	ws->switch_animation_state.target_x_initialized = false;
+	ws->switch_animation_state.active = false;
+}
+
+static int get_switch_animation_offset(struct sway_workspace *ws) {
+	struct animation *animation = ws->switch_animation_state.animation;
+	if (!ws->switch_animation_state.active) {
+		return 0;
+	}
+
+	if (!animation || !config->workspace_switch_anim ||
+			!config->animation_duration_ms ||
+			!config->workspace_anim_duration_ms) {
+		int target = ws->switch_animation_state.target_x;
+		stop_workspace_switch_animation(ws);
+		return target;
+	}
+
+	if (!animation->initialized) {
+		int target = ws->switch_animation_state.target_x;
+		stop_workspace_switch_animation(ws);
+		return target;
+	}
+
+	return get_animated_value(ws->switch_animation_state.from_x,
+		ws->switch_animation_state.target_x, *animation);
+}
+
+static int workspace_switch_num(const char *name) {
+	if (!name) {
+		return -1;
+	}
+	char *endptr = NULL;
+	long num = strtol(name, &endptr, 10);
+	if (!endptr || endptr == name || *endptr != '\0') {
+		return -1;
+	}
+	return (int)num;
+}
+
+void workspace_switch_animation_begin(struct sway_workspace *from,
+		struct sway_workspace *to) {
+	if (!from || !to || from == to || !config->workspace_switch_anim) {
+		return;
+	}
+	if (!from->output || from->output != to->output ||
+			!from->output->wlr_output) {
+		return;
+	}
+	if (from->fullscreen || to->fullscreen) {
+		return;
+	}
+
+	// Slide right to higher workspaces, left to lower ones.
+	bool slide_right =
+		workspace_switch_num(to->name) > workspace_switch_num(from->name);
+	int width = from->output->usable_area.width;
+
+	struct sway_workspace *targets[2] = { from, to };
+	int start_x[2] = { 0, slide_right ? width : -width };
+	int end_x[2] = { slide_right ? -width : width, 0 };
+
+	for (int i = 0; i < 2; ++i) {
+		struct sway_workspace *ws = targets[i];
+		struct animation *animation = ws->switch_animation_state.animation;
+		if (!animation) {
+			continue;
+		}
+		if (animation->initialized) {
+			animation->initialized = false;
+			wl_list_remove(&animation->link);
+		}
+		ws->switch_animation_state.from_x = start_x[i];
+		ws->switch_animation_state.target_x = end_x[i];
+		ws->switch_animation_state.target_x_initialized = true;
+		ws->switch_animation_state.active = true;
+		animation->duration_scale =
+			config->animation_duration_ms > 0.0f ?
+			config->workspace_anim_duration_ms / config->animation_duration_ms :
+			1.0f;
+		add_animation(animation);
+	}
+	start_animations(&animation_update_callback);
+}
+
 static void arrange_workspace_tiling(struct sway_workspace *ws,
 		int width, int height) {
 	arrange_children(ws->current.layout, ws->current.tiling,
@@ -994,6 +1085,8 @@ static void arrange_output(struct sway_output *output, int width, int height) {
 					stop_workspace_scroll_animation(child);
 				}
 
+				workspace_x += get_switch_animation_offset(child);
+
 				wlr_scene_node_set_position(&child->layers.tiling->node,
 					workspace_x, gaps->top + area->y);
 
@@ -1002,6 +1095,22 @@ static void arrange_output(struct sway_output *output, int width, int height) {
 					area->height - gaps->top - gaps->bottom);
 				arrange_workspace_floating(child);
 			}
+		} else if (child->switch_animation_state.active &&
+				config->workspace_switch_anim) {
+			struct wlr_box *area = &output->usable_area;
+			struct side_gaps *gaps = &child->current_gaps;
+			int workspace_width =
+				area->width - gaps->left - gaps->right;
+			int workspace_x = gaps->left + area->x +
+				get_switch_animation_offset(child);
+
+			wlr_scene_node_set_enabled(&child->layers.tiling->node, true);
+			wlr_scene_node_set_enabled(&child->layers.fullscreen->node, false);
+			wlr_scene_node_set_position(&child->layers.tiling->node,
+				workspace_x, gaps->top + area->y);
+			arrange_workspace_tiling(child, workspace_width,
+				area->height - gaps->top - gaps->bottom);
+			arrange_workspace_floating(child);
 		} else {
 			wlr_scene_node_set_enabled(&child->layers.tiling->node, false);
 			wlr_scene_node_set_enabled(&child->layers.fullscreen->node, false);

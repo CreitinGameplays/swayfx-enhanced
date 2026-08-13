@@ -358,6 +358,8 @@ static void config_defaults(struct sway_config *config) {
 
 	// SwayFX defaults
 	config->animation_duration_ms = 90.0f;
+	config->workspace_switch_anim = false;
+	config->workspace_anim_duration_ms = 200.0f;
 
 	config->corner_radius = 0;
 	config->smart_corner_radius = false;

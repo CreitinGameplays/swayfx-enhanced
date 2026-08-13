@@ -204,6 +204,8 @@ sway_cmd cmd_rename;
 sway_cmd cmd_resize;
 sway_cmd cmd_dwindle;
 sway_cmd cmd_scroll;
+sway_cmd cmd_workspace_anim_duration_ms;
+sway_cmd cmd_workspace_switch_anim;
 sway_cmd cmd_scrollable_tiling_touchpad_pinch_resize;
 sway_cmd cmd_scrollable_tiling_touchpad_pinch_resize_factor;
 sway_cmd cmd_scrollable_tiling_touchpad_scroll;

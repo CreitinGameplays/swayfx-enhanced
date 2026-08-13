@@ -148,7 +148,9 @@ static const struct cmd_handler config_handlers[] = {
 	{ "scratchpad_minimize", cmd_scratchpad_minimize },
 	{ "swaybg_command", cmd_swaybg_command },
 	{ "swaynag_command", cmd_swaynag_command },
+	{ "workspace_anim_duration_ms", cmd_workspace_anim_duration_ms },
 	{ "workspace_layout", cmd_workspace_layout },
+	{ "workspace_switch_anim", cmd_workspace_switch_anim },
 	{ "xwayland", cmd_xwayland },
 };
 

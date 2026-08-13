@@ -104,6 +104,20 @@ struct sway_workspace *workspace_create(struct sway_output *output,
 	*ws->scroll_animation_state.animation = init_animation();
 	ws->scroll_animation_state.animation->duration_scale = 1.5f;
 
+	ws->switch_animation_state.animation = malloc(sizeof(struct animation));
+	if (!ws->switch_animation_state.animation) {
+		wlr_scene_node_destroy(&ws->layers.tiling->node);
+		wlr_scene_node_destroy(&ws->layers.fullscreen->node);
+		free(ws->name);
+		list_free(ws->floating);
+		list_free(ws->tiling);
+		list_free(ws->output_priority);
+		free(ws);
+		return NULL;
+	}
+	*ws->switch_animation_state.animation = init_animation();
+	ws->switch_animation_state.animation->duration_scale = 1.0f;
+
 	ws->gaps_outer = config->gaps_outer;
 	ws->gaps_inner = config->gaps_inner;
 	if (name) {
@@ -167,6 +181,13 @@ void workspace_destroy(struct sway_workspace *workspace) {
 			wl_list_remove(&workspace->scroll_animation_state.animation->link);
 		}
 		free(workspace->scroll_animation_state.animation);
+	}
+	if (workspace->switch_animation_state.animation) {
+		if (workspace->switch_animation_state.animation->initialized) {
+			workspace->switch_animation_state.animation->initialized = false;
+			wl_list_remove(&workspace->switch_animation_state.animation->link);
+		}
+		free(workspace->switch_animation_state.animation);
 	}
 
 	free(workspace->name);
