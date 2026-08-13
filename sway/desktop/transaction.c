@@ -916,6 +916,43 @@ static void stop_workspace_switch_animation(struct sway_workspace *ws) {
 	ws->switch_animation_state.active = false;
 }
 
+// Workspace slide easing, same feel as Hyprland's menu_decel curve.
+#define WORKSPACE_SWITCH_BEZIER_X1 0.10
+#define WORKSPACE_SWITCH_BEZIER_Y1 1.00
+#define WORKSPACE_SWITCH_BEZIER_X2 0.00
+#define WORKSPACE_SWITCH_BEZIER_Y2 1.00
+
+static double cubic_bezier_x(double t, double c1x, double c2x) {
+	double one_minus_t = 1.0 - t;
+	return 3 * one_minus_t * one_minus_t * t * c1x
+		+ 3 * one_minus_t * t * t * c2x + t * t * t;
+}
+
+static float cubic_bezier_ease(float progress, double c1x, double c1y,
+		double c2x, double c2y) {
+	if (progress <= 0.0f) {
+		return 0.0f;
+	}
+	if (progress >= 1.0f) {
+		return 1.0f;
+	}
+	// Binary search for the curve time whose x-coordinate hits our progress.
+	double t_low = 0.0;
+	double t_high = 1.0;
+	for (int iteration = 0; iteration < 32; ++iteration) {
+		double t_mid = (t_low + t_high) * 0.5;
+		if (cubic_bezier_x(t_mid, c1x, c2x) < progress) {
+			t_low = t_mid;
+		} else {
+			t_high = t_mid;
+		}
+	}
+	double t = (t_low + t_high) * 0.5;
+	double one_minus_t = 1.0 - t;
+	return (float)(3 * one_minus_t * one_minus_t * t * c1y
+		+ 3 * one_minus_t * t * t * c2y + t * t * t);
+}
+
 static int get_switch_animation_offset(struct sway_workspace *ws) {
 	struct animation *animation = ws->switch_animation_state.animation;
 	if (!ws->switch_animation_state.active) {
@@ -936,8 +973,12 @@ static int get_switch_animation_offset(struct sway_workspace *ws) {
 		return target;
 	}
 
-	return get_animated_value(ws->switch_animation_state.from_x,
-		ws->switch_animation_state.target_x, *animation);
+	float eased = cubic_bezier_ease(animation->progress,
+		WORKSPACE_SWITCH_BEZIER_X1, WORKSPACE_SWITCH_BEZIER_Y1,
+		WORKSPACE_SWITCH_BEZIER_X2, WORKSPACE_SWITCH_BEZIER_Y2);
+	return ws->switch_animation_state.from_x +
+		(ws->switch_animation_state.target_x -
+			ws->switch_animation_state.from_x) * eased;
 }
 
 static int workspace_switch_num(const char *name) {
