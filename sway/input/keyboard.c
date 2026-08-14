@@ -14,7 +14,6 @@
 #include "sway/input/seat.h"
 #include "sway/input/cursor.h"
 #include "sway/ipc-server.h"
-#include "sway/layers.h"
 #include "sway/server.h"
 #include "log.h"
 
@@ -441,13 +440,6 @@ static void handle_key_event(struct sway_keyboard *keyboard,
 	bool exact_identifier = keyboard->wlr->group != NULL;
 	seat_idle_notify_activity(seat, IDLE_SOURCE_KEYBOARD);
 	bool locked = server.session_lock.lock;
-
-	if (layer_surface_should_retain_focus(seat->focused_layer) &&
-			wlr_seat->keyboard_state.focused_surface !=
-				seat->focused_layer->surface) {
-		seat_set_focus_layer(seat, seat->focused_layer);
-	}
-
 	struct sway_keyboard_shortcuts_inhibitor *sway_inhibitor =
 		keyboard_shortcuts_inhibitor_get_for_focused_surface(seat);
 	bool shortcuts_inhibited = sway_inhibitor && sway_inhibitor->inhibitor->active;

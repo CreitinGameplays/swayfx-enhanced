@@ -306,8 +306,7 @@ static void handle_tablet_tool_tip(struct sway_seat *seat,
 	struct wlr_xwayland_surface *xsurface;
 #endif
 	if ((layer = wlr_layer_surface_v1_try_from_wlr_surface(surface)) &&
-			(layer->current.keyboard_interactive ||
-			layer_surface_is_full_output_overlay(layer))) {
+			layer->current.keyboard_interactive) {
 		// Handle tapping a layer surface
 		seat_set_focus_layer(seat, layer);
 		transaction_commit_dirty();
@@ -471,8 +470,7 @@ static void handle_button(struct sway_seat *seat, uint32_t time_msec,
 	// Handle clicking a layer surface and its popups/subsurfaces
 	struct wlr_layer_surface_v1 *layer = NULL;
 	if ((layer = toplevel_layer_surface_from_surface(surface))) {
-		if (layer->current.keyboard_interactive ||
-				layer_surface_is_full_output_overlay(layer)) {
+		if (layer->current.keyboard_interactive) {
 			seat_set_focus_layer(seat, layer);
 			transaction_commit_dirty();
 		}
@@ -654,15 +652,6 @@ static void check_focus_follows_mouse(struct sway_seat *seat,
 		struct seatop_default_event *e, struct sway_node *hovered_node) {
 	struct sway_node *focus = seat_get_focus(seat);
 
-	if (layer_surface_should_retain_focus(seat->focused_layer)) {
-		if (seat->wlr_seat->keyboard_state.focused_surface !=
-				seat->focused_layer->surface) {
-			seat_set_focus_layer(seat, seat->focused_layer);
-			transaction_commit_dirty();
-		}
-		return;
-	}
-
 	// This is the case if a layer-shell surface is hovered.
 	// If it's on another output, focus the active workspace there.
 	if (!hovered_node) {
@@ -680,8 +669,7 @@ static void check_focus_follows_mouse(struct sway_seat *seat,
 		// Focus topmost layer surface
 		struct wlr_layer_surface_v1 *layer = NULL;
 		if ((layer = toplevel_layer_surface_from_surface(surface)) &&
-				(layer->current.keyboard_interactive ||
-				layer_surface_is_full_output_overlay(layer))) {
+				layer->current.keyboard_interactive) {
 			seat_set_focus_layer(seat, layer);
 			transaction_commit_dirty();
 			return;
@@ -912,8 +900,7 @@ static bool handle_scrollable_touchpad_axis(struct sway_seat *seat,
 
 	struct sway_workspace *ws = seat_get_focused_workspace(seat);
 	if (!ws || ws->layout != L_SCROLL_H || ws->tiling->length == 0 ||
-			ws->fullscreen || workspace_has_maximized_container(ws) ||
-			workspace_has_full_output_layer_overlay(ws)) {
+			ws->fullscreen || workspace_has_maximized_container(ws)) {
 		return false;
 	}
 	if (node && node->type == N_WORKSPACE) {
@@ -1212,7 +1199,6 @@ static bool handle_scrollable_pinch_resize_begin(struct sway_seat *seat) {
 	struct sway_workspace *ws = seat_get_focused_workspace(seat);
 	if (!ws || ws->layout != L_SCROLL_H || ws->tiling->length == 0 ||
 			ws->fullscreen || workspace_has_maximized_container(ws) ||
-			workspace_has_full_output_layer_overlay(ws) ||
 			!cursor_is_over_workspace_or_container(seat, ws)) {
 		return false;
 	}

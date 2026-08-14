@@ -38,101 +38,6 @@ static uint32_t get_current_time_msec(void) {
 	return now.tv_sec * 1000 + now.tv_nsec / 1000000;
 }
 
-static bool layer_surface_at(struct wlr_layer_surface_v1 *layer_surface,
-		double lx, double ly, struct wlr_surface **wlr_surface,
-		double *sx, double *sy) {
-	if (!layer_surface || !layer_surface->data ||
-			!layer_surface->surface || !layer_surface->surface->mapped) {
-		return false;
-	}
-
-	struct sway_layer_surface *surface = layer_surface->data;
-	int surface_lx, surface_ly;
-	wlr_scene_node_coords(&surface->scene->tree->node,
-		&surface_lx, &surface_ly);
-	double local_sx = lx - surface_lx;
-	double local_sy = ly - surface_ly;
-	if (local_sx < 0 || local_sy < 0 ||
-			local_sx >= layer_surface->surface->current.width ||
-			local_sy >= layer_surface->surface->current.height) {
-		return false;
-	}
-
-	*wlr_surface = layer_surface->surface;
-	*sx = local_sx;
-	*sy = local_sy;
-	return true;
-}
-
-static bool full_output_layer_overlay_at(struct wlr_scene_tree *tree,
-		double lx, double ly, struct wlr_surface **wlr_surface,
-		double *sx, double *sy) {
-	struct wlr_scene_node *node;
-	wl_list_for_each_reverse(node, &tree->children, link) {
-		struct sway_layer_surface *surface = scene_descriptor_try_get(node,
-			SWAY_SCENE_DESC_LAYER_SHELL);
-		if (!surface && node->type == WLR_SCENE_NODE_TREE &&
-				full_output_layer_overlay_at(wlr_scene_tree_from_node(node),
-					lx, ly, wlr_surface, sx, sy)) {
-			return true;
-		}
-
-		if (!surface || !layer_surface_is_full_output_overlay(surface->layer_surface)) {
-			continue;
-		}
-
-		if (layer_surface_at(surface->layer_surface, lx, ly,
-				wlr_surface, sx, sy)) {
-			return true;
-		}
-	}
-
-	return false;
-}
-
-static bool full_output_overlay_surface_at(double lx, double ly,
-		struct wlr_surface **wlr_surface, double *sx, double *sy) {
-	return full_output_layer_overlay_at(root->layers.shell_overlay,
-			lx, ly, wlr_surface, sx, sy) ||
-		full_output_layer_overlay_at(root->layers.shell_top,
-			lx, ly, wlr_surface, sx, sy);
-}
-
-static bool retained_layer_surface_at(struct wlr_scene_tree *tree,
-		double lx, double ly, struct wlr_surface **wlr_surface,
-		double *sx, double *sy) {
-	struct wlr_scene_node *node;
-	wl_list_for_each_reverse(node, &tree->children, link) {
-		struct sway_layer_surface *surface = scene_descriptor_try_get(node,
-			SWAY_SCENE_DESC_LAYER_SHELL);
-		if (!surface && node->type == WLR_SCENE_NODE_TREE &&
-				retained_layer_surface_at(wlr_scene_tree_from_node(node),
-					lx, ly, wlr_surface, sx, sy)) {
-			return true;
-		}
-
-		if (!surface ||
-				!layer_surface_should_retain_focus(surface->layer_surface)) {
-			continue;
-		}
-
-		if (layer_surface_at(surface->layer_surface, lx, ly,
-				wlr_surface, sx, sy)) {
-			return true;
-		}
-	}
-
-	return false;
-}
-
-static bool retained_overlay_surface_at(double lx, double ly,
-		struct wlr_surface **wlr_surface, double *sx, double *sy) {
-	return retained_layer_surface_at(root->layers.shell_overlay,
-			lx, ly, wlr_surface, sx, sy) ||
-		retained_layer_surface_at(root->layers.shell_top,
-			lx, ly, wlr_surface, sx, sy);
-}
-
 /**
  * Returns the node at the cursor's position. If there is a surface at that
  * location, it is stored in **surface (it may not be a view).
@@ -141,10 +46,6 @@ struct sway_node *node_at_coords(
 		struct sway_seat *seat, double lx, double ly,
 		struct wlr_surface **surface, double *sx, double *sy) {
 	struct wlr_scene_node *scene_node = NULL;
-
-	if (retained_overlay_surface_at(lx, ly, surface, sx, sy)) {
-		return NULL;
-	}
 
 	struct wlr_scene_node *node;
 	wl_list_for_each_reverse(node, &root->layer_tree->children, link) {
@@ -160,13 +61,6 @@ struct sway_node *node_at_coords(
 		if (scene_node) {
 			break;
 		}
-
-		if ((layer == root->layers.shell_overlay ||
-				layer == root->layers.shell_top) &&
-				full_output_layer_overlay_at(layer, lx, ly,
-					surface, sx, sy)) {
-			return NULL;
-		}
 	}
 
 	if (scene_node) {
@@ -179,22 +73,6 @@ struct sway_node *node_at_coords(
 
 			if (scene_surface) {
 				*surface = scene_surface->surface;
-			}
-		}
-
-		// Full-output overlays should capture input ahead of lower layers,
-		// even if the scene hit-test can still resolve something beneath them.
-		struct wlr_layer_surface_v1 *layer_surface =
-			toplevel_layer_surface_from_surface(*surface);
-		if (!layer_surface || !layer_surface_is_full_output_overlay(layer_surface)) {
-			struct wlr_surface *overlay_surface = NULL;
-			double overlay_sx, overlay_sy;
-			if (full_output_overlay_surface_at(lx, ly,
-					&overlay_surface, &overlay_sx, &overlay_sy)) {
-				*surface = overlay_surface;
-				*sx = overlay_sx;
-				*sy = overlay_sy;
-				return NULL;
 			}
 		}
 
@@ -242,10 +120,6 @@ struct sway_node *node_at_coords(
 
 			current = &current->parent->node;
 		}
-	}
-
-	if (full_output_overlay_surface_at(lx, ly, surface, sx, sy)) {
-		return NULL;
 	}
 
 	// if we aren't on a container, determine what workspace we are on
