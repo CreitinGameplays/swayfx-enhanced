@@ -916,11 +916,7 @@ static void stop_workspace_switch_animation(struct sway_workspace *ws) {
 	ws->switch_animation_state.active = false;
 }
 
-// Workspace slide easing, same feel as Hyprland's menu_decel curve.
-#define WORKSPACE_SWITCH_BEZIER_X1 0.10
-#define WORKSPACE_SWITCH_BEZIER_Y1 1.00
-#define WORKSPACE_SWITCH_BEZIER_X2 0.00
-#define WORKSPACE_SWITCH_BEZIER_Y2 1.00
+// Workspace slide easing, defaults to Hyprland's menu_decel curve.
 
 static double cubic_bezier_x(double t, double c1x, double c2x) {
 	double one_minus_t = 1.0 - t;
@@ -974,8 +970,10 @@ static int get_switch_animation_offset(struct sway_workspace *ws) {
 	}
 
 	float eased = cubic_bezier_ease(animation->progress,
-		WORKSPACE_SWITCH_BEZIER_X1, WORKSPACE_SWITCH_BEZIER_Y1,
-		WORKSPACE_SWITCH_BEZIER_X2, WORKSPACE_SWITCH_BEZIER_Y2);
+		config->workspace_switch_curve_c1x,
+		config->workspace_switch_curve_c1y,
+		config->workspace_switch_curve_c2x,
+		config->workspace_switch_curve_c2y);
 	return ws->switch_animation_state.from_x +
 		(ws->switch_animation_state.target_x -
 			ws->switch_animation_state.from_x) * eased;

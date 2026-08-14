@@ -151,6 +151,7 @@ static const struct cmd_handler config_handlers[] = {
 	{ "workspace_anim_duration_ms", cmd_workspace_anim_duration_ms },
 	{ "workspace_layout", cmd_workspace_layout },
 	{ "workspace_switch_anim", cmd_workspace_switch_anim },
+	{ "workspace_switch_curve", cmd_workspace_switch_curve },
 	{ "xwayland", cmd_xwayland },
 };
 

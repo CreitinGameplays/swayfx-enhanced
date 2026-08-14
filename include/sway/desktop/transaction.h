@@ -67,8 +67,7 @@ void transaction_arrange_closing_containers(void);
 
 void transaction_close_animation_cancel(struct sway_container *con);
 
-// Slides the outgoing workspace off one edge while the incoming one
-// slides in from the other. No-op when `workspace_switch_anim` is disabled.
+// Outgoing workspace slides off one edge, incoming slides in from the other.
 void workspace_switch_animation_begin(struct sway_workspace *from,
 		struct sway_workspace *to);
 
