@@ -828,7 +828,11 @@ static void arrange_fullscreen(struct wlr_scene_tree *tree,
 	wlr_scene_node_set_position(fs_node, 0, 0);
 }
 
-static void arrange_workspace_floating(struct sway_workspace *ws) {
+static int get_switch_animation_offset(struct sway_workspace *ws);
+
+static void arrange_workspace_floating(struct sway_workspace *ws, bool activated) {
+	int offset = get_switch_animation_offset(ws);
+	bool show = activated || (ws->switch_animation_state.active && config->workspace_switch_anim);
 	for (int i = 0; i < ws->current.floating->length; i++) {
 		struct sway_container *floater = ws->current.floating->items[i];
 		if (floater->current.fullscreen_mode != FULLSCREEN_NONE &&
@@ -839,10 +843,10 @@ static void arrange_workspace_floating(struct sway_workspace *ws) {
 		struct wlr_scene_tree *layer = get_floating_layer(floater);
 		wlr_scene_node_reparent(&floater->scene_tree->node, layer);
 		wlr_scene_node_set_position(&floater->scene_tree->node,
-			floater->current.x, floater->current.y);
-		wlr_scene_node_set_enabled(&floater->scene_tree->node, true);
-		wlr_scene_node_set_enabled(&floater->shadow->node, container_has_shadow(floater) && floater->view);
-		wlr_scene_node_set_enabled(&floater->border.tree->node, true);
+			floater->current.x + offset, floater->current.y);
+		wlr_scene_node_set_enabled(&floater->scene_tree->node, show);
+		wlr_scene_node_set_enabled(&floater->shadow->node, show && container_has_shadow(floater) && floater->view);
+		wlr_scene_node_set_enabled(&floater->border.tree->node, show);
 
 		arrange_container(floater, floater->current.width, floater->current.height,
 			true, ws->gaps_inner);
@@ -1108,7 +1112,7 @@ static void arrange_output(struct sway_output *output, int width, int height) {
 
 				wlr_scene_rect_set_size(output->fullscreen_background, width, height);
 
-				arrange_workspace_floating(child);
+				arrange_workspace_floating(child, true);
 				arrange_fullscreen(child->layers.fullscreen, fs, child,
 					width, height);
 			} else {
@@ -1132,7 +1136,7 @@ static void arrange_output(struct sway_output *output, int width, int height) {
 				arrange_workspace_tiling(child,
 					workspace_width,
 					area->height - gaps->top - gaps->bottom);
-				arrange_workspace_floating(child);
+				arrange_workspace_floating(child, true);
 			}
 		} else if (child->switch_animation_state.active &&
 				config->workspace_switch_anim) {
@@ -1149,7 +1153,7 @@ static void arrange_output(struct sway_output *output, int width, int height) {
 				workspace_x, gaps->top + area->y);
 			arrange_workspace_tiling(child, workspace_width,
 				area->height - gaps->top - gaps->bottom);
-			arrange_workspace_floating(child);
+			arrange_workspace_floating(child, false);
 		} else {
 			wlr_scene_node_set_enabled(&child->layers.tiling->node, false);
 			wlr_scene_node_set_enabled(&child->layers.fullscreen->node, false);
@@ -1215,7 +1219,7 @@ static void arrange_root(struct sway_root *root) {
 
 			// arrange the active workspace
 			if (ws) {
-				arrange_workspace_floating(ws);
+				arrange_workspace_floating(ws, true);
 			}
 		}
 
