@@ -486,6 +486,13 @@ enum xwayland_mode {
  */
 struct sway_config {
 	float animation_duration_ms;
+	bool workspace_switch_anim;
+	float workspace_anim_duration_ms;
+	// Workspace slide easing curve control points.
+	double workspace_switch_curve_c1x;
+	double workspace_switch_curve_c1y;
+	double workspace_switch_curve_c2x;
+	double workspace_switch_curve_c2y;
 	int corner_radius;
 	bool smart_corner_radius;
 

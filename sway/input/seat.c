@@ -17,6 +17,7 @@
 #include "list.h"
 #include "log.h"
 #include "sway/config.h"
+#include "sway/desktop/transaction.h"
 #include "sway/scene_descriptor.h"
 #include "sway/input/cursor.h"
 #include "sway/input/input-manager.h"
@@ -1229,6 +1230,7 @@ static void seat_set_workspace_focus(struct sway_seat *seat, struct sway_node *n
 
 	if (last_workspace != new_workspace && new_output) {
 		node_set_dirty(&new_output->node);
+		workspace_switch_animation_begin(last_workspace, new_workspace);
 	}
 
 	// find new output's old workspace, which might have to be removed if empty

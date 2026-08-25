@@ -358,6 +358,13 @@ static void config_defaults(struct sway_config *config) {
 
 	// SwayFX defaults
 	config->animation_duration_ms = 90.0f;
+	config->workspace_switch_anim = false;
+	config->workspace_anim_duration_ms = 200.0f;
+	// Same curve as Hyprland's menu_decel (the default).
+	config->workspace_switch_curve_c1x = 0.10;
+	config->workspace_switch_curve_c1y = 1.00;
+	config->workspace_switch_curve_c2x = 0.00;
+	config->workspace_switch_curve_c2y = 1.00;
 
 	config->corner_radius = 0;
 	config->smart_corner_radius = false;

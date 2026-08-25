@@ -906,6 +906,136 @@ static int get_animated_scroll_workspace_x(struct sway_workspace *ws,
 	return ws->scroll_animation_state.target_x;
 }
 
+static void stop_workspace_switch_animation(struct sway_workspace *ws) {
+	struct animation *animation = ws->switch_animation_state.animation;
+	if (animation && animation->initialized) {
+		animation->initialized = false;
+		wl_list_remove(&animation->link);
+	}
+	ws->switch_animation_state.target_x_initialized = false;
+	ws->switch_animation_state.active = false;
+}
+
+// Workspace slide easing, defaults to Hyprland's menu_decel curve.
+
+static double cubic_bezier_x(double t, double c1x, double c2x) {
+	double one_minus_t = 1.0 - t;
+	return 3 * one_minus_t * one_minus_t * t * c1x
+		+ 3 * one_minus_t * t * t * c2x + t * t * t;
+}
+
+static float cubic_bezier_ease(float progress, double c1x, double c1y,
+		double c2x, double c2y) {
+	if (progress <= 0.0f) {
+		return 0.0f;
+	}
+	if (progress >= 1.0f) {
+		return 1.0f;
+	}
+	// Binary search for the curve time whose x-coordinate hits our progress.
+	double t_low = 0.0;
+	double t_high = 1.0;
+	for (int iteration = 0; iteration < 32; ++iteration) {
+		double t_mid = (t_low + t_high) * 0.5;
+		if (cubic_bezier_x(t_mid, c1x, c2x) < progress) {
+			t_low = t_mid;
+		} else {
+			t_high = t_mid;
+		}
+	}
+	double t = (t_low + t_high) * 0.5;
+	double one_minus_t = 1.0 - t;
+	return (float)(3 * one_minus_t * one_minus_t * t * c1y
+		+ 3 * one_minus_t * t * t * c2y + t * t * t);
+}
+
+static int get_switch_animation_offset(struct sway_workspace *ws) {
+	struct animation *animation = ws->switch_animation_state.animation;
+	if (!ws->switch_animation_state.active) {
+		return 0;
+	}
+
+	if (!animation || !config->workspace_switch_anim ||
+			!config->animation_duration_ms ||
+			!config->workspace_anim_duration_ms) {
+		int target = ws->switch_animation_state.target_x;
+		stop_workspace_switch_animation(ws);
+		return target;
+	}
+
+	if (!animation->initialized) {
+		int target = ws->switch_animation_state.target_x;
+		stop_workspace_switch_animation(ws);
+		return target;
+	}
+
+	float eased = cubic_bezier_ease(animation->progress,
+		config->workspace_switch_curve_c1x,
+		config->workspace_switch_curve_c1y,
+		config->workspace_switch_curve_c2x,
+		config->workspace_switch_curve_c2y);
+	return ws->switch_animation_state.from_x +
+		(ws->switch_animation_state.target_x -
+			ws->switch_animation_state.from_x) * eased;
+}
+
+static int workspace_switch_num(const char *name) {
+	if (!name) {
+		return -1;
+	}
+	char *endptr = NULL;
+	long num = strtol(name, &endptr, 10);
+	if (!endptr || endptr == name || *endptr != '\0') {
+		return -1;
+	}
+	return (int)num;
+}
+
+void workspace_switch_animation_begin(struct sway_workspace *from,
+		struct sway_workspace *to) {
+	if (!from || !to || from == to || !config->workspace_switch_anim) {
+		return;
+	}
+	if (!from->output || from->output != to->output ||
+			!from->output->wlr_output) {
+		return;
+	}
+	if (from->fullscreen || to->fullscreen) {
+		return;
+	}
+
+	// Slide right to higher workspaces, left to lower ones.
+	bool slide_right =
+		workspace_switch_num(to->name) > workspace_switch_num(from->name);
+	int width = from->output->usable_area.width;
+
+	struct sway_workspace *targets[2] = { from, to };
+	int start_x[2] = { 0, slide_right ? width : -width };
+	int end_x[2] = { slide_right ? -width : width, 0 };
+
+	for (int i = 0; i < 2; ++i) {
+		struct sway_workspace *ws = targets[i];
+		struct animation *animation = ws->switch_animation_state.animation;
+		if (!animation) {
+			continue;
+		}
+		if (animation->initialized) {
+			animation->initialized = false;
+			wl_list_remove(&animation->link);
+		}
+		ws->switch_animation_state.from_x = start_x[i];
+		ws->switch_animation_state.target_x = end_x[i];
+		ws->switch_animation_state.target_x_initialized = true;
+		ws->switch_animation_state.active = true;
+		animation->duration_scale =
+			config->animation_duration_ms > 0.0f ?
+			config->workspace_anim_duration_ms / config->animation_duration_ms :
+			1.0f;
+		add_animation(animation);
+	}
+	start_animations(&animation_update_callback);
+}
+
 static void arrange_workspace_tiling(struct sway_workspace *ws,
 		int width, int height) {
 	arrange_children(ws->current.layout, ws->current.tiling,
@@ -994,6 +1124,8 @@ static void arrange_output(struct sway_output *output, int width, int height) {
 					stop_workspace_scroll_animation(child);
 				}
 
+				workspace_x += get_switch_animation_offset(child);
+
 				wlr_scene_node_set_position(&child->layers.tiling->node,
 					workspace_x, gaps->top + area->y);
 
@@ -1002,6 +1134,22 @@ static void arrange_output(struct sway_output *output, int width, int height) {
 					area->height - gaps->top - gaps->bottom);
 				arrange_workspace_floating(child);
 			}
+		} else if (child->switch_animation_state.active &&
+				config->workspace_switch_anim) {
+			struct wlr_box *area = &output->usable_area;
+			struct side_gaps *gaps = &child->current_gaps;
+			int workspace_width =
+				area->width - gaps->left - gaps->right;
+			int workspace_x = gaps->left + area->x +
+				get_switch_animation_offset(child);
+
+			wlr_scene_node_set_enabled(&child->layers.tiling->node, true);
+			wlr_scene_node_set_enabled(&child->layers.fullscreen->node, false);
+			wlr_scene_node_set_position(&child->layers.tiling->node,
+				workspace_x, gaps->top + area->y);
+			arrange_workspace_tiling(child, workspace_width,
+				area->height - gaps->top - gaps->bottom);
+			arrange_workspace_floating(child);
 		} else {
 			wlr_scene_node_set_enabled(&child->layers.tiling->node, false);
 			wlr_scene_node_set_enabled(&child->layers.fullscreen->node, false);
