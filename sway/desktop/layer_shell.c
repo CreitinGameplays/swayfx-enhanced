@@ -169,24 +169,6 @@ static void arrange_surface(struct sway_output *output, const struct wlr_box *fu
 	}
 }
 
-static bool layer_surface_is_keyboard_focusable(
-		struct wlr_layer_surface_v1 *layer_surface) {
-	return layer_surface && layer_surface->surface &&
-		layer_surface->surface->mapped &&
-		layer_surface->current.layer >= ZWLR_LAYER_SHELL_V1_LAYER_TOP &&
-		(layer_surface->current.keyboard_interactive !=
-			ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE ||
-			layer_surface_should_retain_focus(layer_surface));
-}
-
-static bool layer_surface_should_force_focus(
-		struct wlr_layer_surface_v1 *layer_surface) {
-	return layer_surface_is_keyboard_focusable(layer_surface) &&
-		(layer_surface->current.keyboard_interactive ==
-			ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE ||
-			layer_surface_should_retain_focus(layer_surface));
-}
-
 void arrange_layers(struct sway_output *output) {
 	struct wlr_box usable_area = { 0 };
 	wlr_output_effective_resolution(output->wlr_output,
@@ -211,7 +193,7 @@ void arrange_layers(struct sway_output *output) {
 		arrange_popups(root->layers.popup);
 	}
 
-	// Find topmost layer which needs compositor-enforced focus.
+	// Find topmost keyboard interactive layer, if such a layer exists
 	struct wlr_scene_tree *layers_above_shell[] = {
 		output->layers.shell_overlay,
 		output->layers.shell_top,
@@ -224,7 +206,9 @@ void arrange_layers(struct sway_output *output) {
 				&layers_above_shell[i]->children, link) {
 			struct sway_layer_surface *surface = scene_descriptor_try_get(node,
 				SWAY_SCENE_DESC_LAYER_SHELL);
-			if (surface && layer_surface_should_force_focus(surface->layer_surface)) {
+			if (surface && surface->layer_surface->current.keyboard_interactive
+					== ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE &&
+					surface->layer_surface->surface->mapped) {
 				topmost = surface;
 				break;
 			}
@@ -240,11 +224,8 @@ void arrange_layers(struct sway_output *output) {
 		if (topmost != NULL) {
 			seat_set_focus_layer(seat, topmost->layer_surface);
 		} else if (seat->focused_layer &&
-				seat->focused_layer->output == output->wlr_output &&
-				!layer_surface_is_keyboard_focusable(seat->focused_layer) &&
-				!layer_surface_should_retain_focus(seat->focused_layer)) {
-			// Preserve focus for retained overlays. Only clear it once the
-			// focused layer is no longer eligible to own input.
+				seat->focused_layer->current.keyboard_interactive
+					!= ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE) {
 			seat_set_focus_layer(seat, NULL);
 		}
 	}
@@ -265,103 +246,6 @@ static struct wlr_scene_tree *sway_layer_get_scene(struct sway_output *output,
 
 	sway_assert(false, "unreachable");
 	return NULL;
-}
-
-static bool layer_surface_covers_box(struct sway_layer_surface *surface,
-		const struct wlr_box *box) {
-	if (!surface || !surface->layer_surface ||
-			!surface->layer_surface->surface->mapped ||
-			surface->layer_surface->surface->current.width <= 0 ||
-			surface->layer_surface->surface->current.height <= 0) {
-		return false;
-	}
-
-	struct wlr_layer_surface_v1 *layer_surface = surface->layer_surface;
-	if (layer_surface->current.layer < ZWLR_LAYER_SHELL_V1_LAYER_TOP) {
-		return false;
-	}
-
-	int lx, ly;
-	wlr_scene_node_coords(&surface->scene->tree->node, &lx, &ly);
-	struct wlr_box surface_box = {
-		.x = lx,
-		.y = ly,
-		.width = layer_surface->surface->current.width,
-		.height = layer_surface->surface->current.height,
-	};
-
-	struct wlr_box intersection;
-	return wlr_box_intersection(&intersection, &surface_box, box) &&
-		intersection.width >= box->width - 2 &&
-		intersection.height >= box->height - 2;
-}
-
-static bool layer_tree_has_full_output_overlay(struct wlr_scene_tree *tree,
-		const struct wlr_box *output_box, const struct wlr_box *workspace_box) {
-	struct wlr_scene_node *node;
-	wl_list_for_each_reverse(node, &tree->children, link) {
-		struct sway_layer_surface *surface = scene_descriptor_try_get(node,
-			SWAY_SCENE_DESC_LAYER_SHELL);
-		if (layer_surface_covers_box(surface, output_box) ||
-				layer_surface_covers_box(surface, workspace_box)) {
-			return true;
-		}
-	}
-	return false;
-}
-
-bool layer_surface_is_full_output_overlay(struct wlr_layer_surface_v1 *layer_surface) {
-	if (!layer_surface || !layer_surface->data || !layer_surface->output) {
-		return false;
-	}
-
-	struct sway_layer_surface *surface = layer_surface->data;
-	struct sway_output *output = layer_surface->output->data;
-	if (!output) {
-		return false;
-	}
-
-	struct wlr_box output_box;
-	output_get_box(output, &output_box);
-	if (layer_surface_covers_box(surface, &output_box)) {
-		return true;
-	}
-
-	struct sway_workspace *ws = output_get_active_workspace(output);
-	if (ws) {
-		struct wlr_box workspace_box;
-		workspace_get_box(ws, &workspace_box);
-		if (layer_surface_covers_box(surface, &workspace_box)) {
-			return true;
-		}
-	}
-
-	return false;
-}
-
-bool layer_surface_should_retain_focus(struct wlr_layer_surface_v1 *layer_surface) {
-	return layer_surface && layer_surface->surface &&
-		layer_surface->surface->mapped &&
-		layer_surface->current.layer >= ZWLR_LAYER_SHELL_V1_LAYER_TOP &&
-		(layer_surface->current.keyboard_interactive !=
-			ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE ||
-			layer_surface_is_full_output_overlay(layer_surface));
-}
-
-bool workspace_has_full_output_layer_overlay(struct sway_workspace *ws) {
-	if (!ws || !ws->output) {
-		return false;
-	}
-
-	struct wlr_box output_box;
-	output_get_box(ws->output, &output_box);
-	struct wlr_box workspace_box;
-	workspace_get_box(ws, &workspace_box);
-
-	return layer_tree_has_full_output_overlay(ws->output->layers.shell_overlay,
-			&output_box, &workspace_box) ||
-		layer_tree_has_full_output_overlay(ws->output->layers.shell_top,
-			&output_box, &workspace_box);
 }
 
 static struct sway_layer_surface *sway_layer_surface_create(
@@ -551,16 +435,14 @@ static void handle_map(struct wl_listener *listener, void *data) {
 	wlr_scene_node_lower_to_bottom(&surface->liquid_glass_node->node);
 
 	// focus on new surface
-	if (layer_surface_is_keyboard_focusable(layer_surface) &&
+	if (layer_surface->current.keyboard_interactive &&
 			(layer_surface->current.layer == ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY ||
 			layer_surface->current.layer == ZWLR_LAYER_SHELL_V1_LAYER_TOP)) {
 		struct sway_seat *seat;
 		wl_list_for_each(seat, &server.input->seats, link) {
-			// but only if the currently focused layer has a lower precedence,
-			// or this layer should behave like a normal fullscreen window.
+			// but only if the currently focused layer has a lower precedence
 			if (!seat->focused_layer ||
-					seat->focused_layer->current.layer <= layer_surface->current.layer ||
-					layer_surface_should_force_focus(layer_surface)) {
+					seat->focused_layer->current.layer <= layer_surface->current.layer) {
 				seat_set_focus_layer(seat, layer_surface);
 			}
 		}
