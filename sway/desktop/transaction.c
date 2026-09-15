@@ -997,6 +997,26 @@ static int workspace_switch_num(const char *name) {
 
 void workspace_switch_animation_begin(struct sway_workspace *from,
 		struct sway_workspace *to) {
+	// Clear any stale switch animations left over from an interrupted
+	// switch. Otherwise an inactive workspace (with its blur/shadow nodes)
+	// can stay visible and its blur will linger on the new workspace.
+	if (from && from->output) {
+		struct sway_output *out = from->output;
+		for (int i = 0; i < out->workspaces->length; ++i) {
+			struct sway_workspace *ws = out->workspaces->items[i];
+			if (ws != from && ws != to && ws->switch_animation_state.active) {
+				stop_workspace_switch_animation(ws);
+			}
+		}
+		if (out->current.workspaces) {
+			for (int i = 0; i < out->current.workspaces->length; ++i) {
+				struct sway_workspace *ws = out->current.workspaces->items[i];
+				if (ws != from && ws != to && ws->switch_animation_state.active) {
+					stop_workspace_switch_animation(ws);
+				}
+			}
+		}
+	}
 	if (!from || !to || from == to || !config->workspace_switch_anim) {
 		return;
 	}
@@ -1140,21 +1160,39 @@ static void arrange_output(struct sway_output *output, int width, int height) {
 			}
 		} else if (child->switch_animation_state.active &&
 				config->workspace_switch_anim) {
-			struct wlr_box *area = &output->usable_area;
-			struct side_gaps *gaps = &child->current_gaps;
-			int workspace_width =
-				area->width - gaps->left - gaps->right;
-			int workspace_x = gaps->left + area->x +
-				get_switch_animation_offset(child);
+			struct animation *switch_anim =
+				child->switch_animation_state.animation;
+			if (!switch_anim || !switch_anim->initialized) {
+				// The switch animation has finished but the workspace is
+				// still flagged active. Hide it now instead of leaving the
+				// tiling tree (and its blur/shadow nodes) enabled
+				// off-screen, which leaves blurred ghosts behind and leaks
+				// damage/render work.
+				stop_workspace_switch_animation(child);
+				wlr_scene_node_set_enabled(&child->layers.tiling->node, false);
+				wlr_scene_node_set_enabled(&child->layers.fullscreen->node, false);
 
-			wlr_scene_node_set_enabled(&child->layers.tiling->node, true);
-			wlr_scene_node_set_enabled(&child->layers.fullscreen->node, false);
-			wlr_scene_node_set_position(&child->layers.tiling->node,
-				workspace_x, gaps->top + area->y);
-			arrange_workspace_tiling(child, workspace_width,
-				area->height - gaps->top - gaps->bottom);
-			arrange_workspace_floating(child, false);
+				disable_workspace(child);
+			} else {
+				struct wlr_box *area = &output->usable_area;
+				struct side_gaps *gaps = &child->current_gaps;
+				int workspace_width =
+					area->width - gaps->left - gaps->right;
+				int workspace_x = gaps->left + area->x +
+					get_switch_animation_offset(child);
+
+				wlr_scene_node_set_enabled(&child->layers.tiling->node, true);
+				wlr_scene_node_set_enabled(&child->layers.fullscreen->node, false);
+				wlr_scene_node_set_position(&child->layers.tiling->node,
+					workspace_x, gaps->top + area->y);
+				arrange_workspace_tiling(child, workspace_width,
+					area->height - gaps->top - gaps->bottom);
+				arrange_workspace_floating(child, false);
+			}
 		} else {
+			if (child->switch_animation_state.active) {
+				stop_workspace_switch_animation(child);
+			}
 			wlr_scene_node_set_enabled(&child->layers.tiling->node, false);
 			wlr_scene_node_set_enabled(&child->layers.fullscreen->node, false);
 

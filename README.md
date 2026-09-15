@@ -13,7 +13,8 @@ SwayFX expands Sway's feature set to include eye-candy that many users have been
 + **Blur**: Sophisticated background blur for windows and layers.
 + **Shadows**: Real-time window drop shadows.
 + **Rounded Corners**: Anti-aliased rounded corners for windows, borders, and titlebars.
-+ **Animations**: Smooth window movement and resizing animations, plus fast default pop/expand animations when windows open and close.
++ **Animations**: Smooth window movement and resizing animations, plus fast default pop/expand animations when windows open and close. Includes optional sliding workspace-switch animations with configurable bezier curves.
++ **Dwindle Layout**: Optional Hyprland-like auto-split for new tiled windows, driven by container shape and cursor position.
 + **Scrollable Tiling**: Fixed-width horizontal columns with animated workspace panning, wrap-around navigation, and direct column resizing.
 + **New: Liquid Glass (Experimental)**: A unique refractive glass effect.
 + **Dimming**: Dim unfocused windows to help you focus.
@@ -31,6 +32,24 @@ Control the duration of window movement and resizing animations.
 - `animation_duration_ms <value>`: Duration in milliseconds (0-5000, default: 90).
 
 New windows use pop/expand animations by default when opening and closing, using the same animation timing.
+
+#### Workspace switch animation
+Sliding animation when switching workspaces on the same output. The outgoing workspace slides off one edge while the incoming one slides in from the other. Direction follows workspace numbers (higher-numbered workspaces slide right, lower slide left; named workspaces slide left).
+- `workspace_switch_anim <enable|disable>`: Master toggle. Disabled by default.
+- `workspace_anim_duration_ms <value>`: Slide duration in milliseconds (0-5000, default: 200). Scaled relative to `animation_duration_ms`.
+- `workspace_switch_curve <preset|cubic-bezier(x1, y1, x2, y2)>`: Slide easing curve. Default is `menu_decel` (`cubic-bezier(0.1, 1, 0, 1)`, Hyprland-like).
+  - Presets: `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out`, `menu_decel` (alias: `default`).
+  - Custom example: `workspace_switch_curve cubic-bezier(0.1, 1, 0, 1)` (x control points must stay in `[0, 1]`).
+
+Notes:
+- Both tiling and floating windows participate in the slide.
+- The animation is skipped when either workspace is fullscreen, when switching across outputs, or when `workspace_switch_anim` is disabled.
+
+### Dwindle Layout
+Optional Hyprland-like auto-split for new tiled windows.
+- `dwindle <enable|disable>`: Disabled by default.
+
+When enabled, opening a window next to a focused sibling auto-splits it: wide containers split horizontally, tall containers split vertically, and the new window is placed before/after based on which half of the sibling the cursor is on.
 
 Default config convenience:
 - `Mod+m maximize`: Maximize the focused window to the current workspace without entering fullscreen.
@@ -109,6 +128,8 @@ Apply effects to specific layer shell namespaces (e.g., "waybar", "notifications
         corner_radius 10
     }
     ```
+
+Input focus follows upstream behavior: only `EXCLUSIVE` keyboard-interactive top/overlay layers steal and hold keyboard, mouse, and touch focus. The previous retained-focus / full-output-overlay heuristics were removed, so ordinary workspace focus changes no longer get stuck behind layer surfaces.
 
 ### Liquid Glass (Experimental)
 A refractive glass effect that distorts the background.
