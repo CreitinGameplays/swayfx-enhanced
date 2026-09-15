@@ -63,6 +63,12 @@ static enum sway_container_layout get_layout_toggle(int argc, char **argv,
 		}
 		// "layout toggle all"
 		if (strcasecmp(argv[1], "all") == 0) {
+			if (config->dwindle) {
+				// Tabbed and stacking are disabled while dwindle is
+				// enabled: skip them so the toggle can't get stuck.
+				return layout == L_HORIZ ? L_VERT :
+					layout == L_VERT ? L_SCROLL_H : L_HORIZ;
+			}
 			return layout == L_HORIZ ? L_VERT :
 				layout == L_VERT ? L_SCROLL_H :
 				layout == L_SCROLL_H ? L_STACKED :
@@ -175,6 +181,11 @@ struct cmd_results *cmd_layout(int argc, char **argv) {
 	}
 	if (new_layout == L_NONE) {
 		return cmd_results_new(CMD_INVALID, "%s", expected_syntax);
+	}
+	if (config->dwindle &&
+			(new_layout == L_TABBED || new_layout == L_STACKED)) {
+		return cmd_results_new(CMD_FAILURE,
+				"Tabbed and stacking layouts are disabled while dwindle is enabled");
 	}
 	if (target_workspace && target_workspace->layout == L_SCROLL_H &&
 			new_layout != L_SCROLL_H) {

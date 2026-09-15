@@ -14,9 +14,17 @@ struct cmd_results *cmd_workspace_layout(int argc, char **argv) {
 		config->default_workspace_layout = L_SCROLL_H;
 		config->default_layout = L_NONE;
 	} else if (strcasecmp(argv[0], "stacking") == 0) {
+		if (config->dwindle) {
+			return cmd_results_new(CMD_FAILURE,
+					"Tabbed and stacking layouts are disabled while dwindle is enabled");
+		}
 		config->default_workspace_layout = L_NONE;
 		config->default_layout = L_STACKED;
 	} else if (strcasecmp(argv[0], "tabbed") == 0) {
+		if (config->dwindle) {
+			return cmd_results_new(CMD_FAILURE,
+					"Tabbed and stacking layouts are disabled while dwindle is enabled");
+		}
 		config->default_workspace_layout = L_NONE;
 		config->default_layout = L_TABBED;
 	} else {
