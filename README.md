@@ -49,7 +49,7 @@ Notes:
 Optional Hyprland-like auto-split for new tiled windows.
 - `dwindle <enable|disable>`: Disabled by default.
 
-When enabled, opening a window next to a focused sibling auto-splits it: wide containers split horizontally, tall containers split vertically, and the new window is placed before/after based on which half of the sibling the cursor is on.
+When enabled, opening a window next to a focused sibling auto-splits it: wide containers split horizontally, tall containers split vertically, and the new window is placed before/after based on which half of the sibling the cursor is on. Tiling windows use a pixel border while dwindle is enabled, so no title bars are shown; toggling it back restores the configured default border.
 
 Default config convenience:
 - `Mod+m maximize`: Maximize the focused window to the current workspace without entering fullscreen.

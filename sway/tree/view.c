@@ -1099,7 +1099,13 @@ void view_map(struct sway_view *view, struct wlr_surface *wlr_surface,
 			}
 		}
 	} else {
-		view->container->pending.border = config->border;
+		if (config->dwindle && config->border == B_NORMAL) {
+			// Dwindle has no title bars: use a pixel border so new
+			// tiling windows don't show up with a title bar.
+			view->container->pending.border = B_PIXEL;
+		} else {
+			view->container->pending.border = config->border;
+		}
 		view->container->pending.border_thickness = config->border_thickness;
 		view_set_tiled(view, true);
 	}
