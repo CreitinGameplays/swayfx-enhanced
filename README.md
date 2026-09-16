@@ -24,7 +24,6 @@ SwayFX expands Sway's feature set to include eye-candy that many users have been
 
 <p align="center">
     <img src="assets/preview.png" width="500"></img>
-    <sub>ignore the insane RAM usage in this pic</sub>
 </p>
 
 ### Animations
