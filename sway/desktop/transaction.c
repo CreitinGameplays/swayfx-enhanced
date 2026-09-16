@@ -46,11 +46,15 @@ static list_t *closing_containers;
 static const float close_animation_duration_scale = 0.8f;
 
 static void animation_update_callback(void);
+static void arrange_root(struct sway_root *root);
 static bool container_start_close_animation(struct sway_container *con);
 static bool arrange_fullscreen_enter_frame(struct sway_container *fs,
 		struct sway_workspace *ws, struct wlr_scene_tree *tree,
 		int width, int height);
 static void arrange_fullscreen_exit_frame(struct sway_container *con);
+static void fullscreen_outline_teardown(struct sway_container *con);
+static void fullscreen_sweep_workspace(struct sway_workspace *ws,
+		struct sway_container *except);
 
 static int get_container_scroll_x_adjustment(struct sway_container *con) {
 	if (!con || container_is_floating_or_child(con)) {
@@ -705,11 +709,18 @@ static void arrange_container(struct sway_container *con,
 			);
 		}
 
-		// make sure to reparent, it's possible that the client just came out of
-		// fullscreen mode where the parent of the surface is not the container
+	// make sure to reparent, it's possible that the client just came out of
+	// fullscreen mode where the parent of the surface is not the container.
+	// A fullscreen exit zoom keeps the view tree in the fullscreen layer
+	// until it finishes; don't pull it home early.
+	bool fs_exit_zoom = con->animation_state.fullscreen_anim_active &&
+		!con->animation_state.fullscreen_anim_entering &&
+		con->view->saved_surface_tree;
+	if (!fs_exit_zoom) {
 		wlr_scene_node_reparent(&con->view->scene_tree->node, con->content_tree);
 		wlr_scene_node_set_position(&con->view->scene_tree->node,
 			border_left, border_top);
+	}
 
 		wlr_scene_node_set_enabled(&con->blur->node,
 			con->blur_enabled && !con->animation_state.close_running);
@@ -821,6 +832,18 @@ static int container_get_gaps(struct sway_container *con) {
 static void arrange_fullscreen(struct wlr_scene_tree *tree,
 		struct sway_container *fs, struct sway_workspace *ws,
 		int width, int height) {
+	// A container stuck exiting underneath a new fullscreen never gets
+	// tiling arranges again: land it now instead of stranding it.
+	if (ws) {
+		fullscreen_sweep_workspace(ws, fs);
+	} else if (root) {
+		for (int i = 0; i < root->outputs->length; ++i) {
+			struct sway_output *output = root->outputs->items[i];
+			for (int j = 0; j < output->workspaces->length; ++j) {
+				fullscreen_sweep_workspace(output->workspaces->items[j], fs);
+			}
+		}
+	}
 	struct wlr_scene_node *fs_node;
 	if (fs->view) {
 		fs_node = &fs->view->scene_tree->node;
@@ -1318,13 +1341,163 @@ void fullscreen_animation_cancel(struct sway_container *con) {
 		wl_list_remove(&animation->link);
 	}
 	con->animation_state.fullscreen_anim_active = false;
+	fullscreen_outline_teardown(con);
 	fullscreen_chrome_teardown(con);
+}
+
+// One guaranteed landing arrange: nothing promises another arrange_root
+// after this point, so land the rest state now (or let the pending
+// transaction's own arrange do it).
+static void fullscreen_landing_arrange(void) {
+	if (!server.pending_transaction) {
+		arrange_root(root);
+	}
+}
+
+// ---- Fullscreen outline: border ring tracking the zoom --------------------
+// Pixel borders live outside the content snapshot, so a thin ring redrawn
+// every frame outlines the zooming window instead (pixel borders only).
+
+static void fullscreen_outline_destroy_notify(struct wl_listener *listener,
+		void *data) {
+	struct sway_container *con = wl_container_of(listener, con,
+		animation_state.fullscreen_outline_destroy);
+	wl_list_remove(&con->animation_state.fullscreen_outline_destroy.link);
+	con->animation_state.fullscreen_outline = NULL;
+	for (int i = 0; i < 4; ++i) {
+		con->animation_state.fullscreen_outline_rects[i] = NULL;
+	}
+}
+
+static void fullscreen_outline_teardown(struct sway_container *con) {
+	if (!con->animation_state.fullscreen_outline) {
+		return;
+	}
+	wl_list_remove(&con->animation_state.fullscreen_outline_destroy.link);
+	wlr_scene_node_destroy(&con->animation_state.fullscreen_outline->node);
+	con->animation_state.fullscreen_outline = NULL;
+	for (int i = 0; i < 4; ++i) {
+		con->animation_state.fullscreen_outline_rects[i] = NULL;
+	}
+}
+
+// Draws the ring around the global content rect gx,gy,w,h as a child of
+// parent, fading with alpha. Anything but a pixel border has no ring.
+static void fullscreen_outline_frame(struct sway_container *con,
+		struct wlr_scene_tree *parent, int gx, int gy, int w, int h,
+		float alpha) {
+	sway_log(SWAY_DEBUG, "[FSOUTLINE] outline-frame con=%p border=%d bt=%d "
+		"rect=(%d,%d %dx%d) alpha=%.3f parent=%p tree=%p",
+		(void*)con, con->current.border, con->current.border_thickness,
+		gx, gy, w, h, alpha, (void*)parent,
+		(void*)con->animation_state.fullscreen_outline);
+	if (con->current.border != B_PIXEL ||
+			con->current.border_thickness <= 0 || w <= 0 || h <= 0) {
+		fullscreen_outline_teardown(con);
+		return;
+	}
+	struct wlr_scene_tree *tree = con->animation_state.fullscreen_outline;
+	if (tree && tree->node.parent != parent) {
+		// Reversing mid-flight moves to the other layer: rebuild there.
+		fullscreen_outline_teardown(con);
+		tree = NULL;
+	}
+	if (!tree) {
+		float transparent[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+		tree = wlr_scene_tree_create(parent);
+		if (!tree) {
+			return;
+		}
+		for (int i = 0; i < 4; ++i) {
+			struct wlr_scene_rect *rect =
+				wlr_scene_rect_create(tree, 1, 1, transparent);
+			if (!rect) {
+				fullscreen_outline_teardown(con);
+				return;
+			}
+			rect->accepts_input = false;
+			con->animation_state.fullscreen_outline_rects[i] = rect;
+		}
+		con->animation_state.fullscreen_outline = tree;
+		con->animation_state.fullscreen_outline_destroy.notify =
+			fullscreen_outline_destroy_notify;
+		wl_signal_add(&tree->node.events.destroy,
+			&con->animation_state.fullscreen_outline_destroy);
+	}
+	float base[4];
+	container_get_outline_color(con, base);
+	float a = base[3] * alpha;
+	float color[4] = {base[0] * a, base[1] * a, base[2] * a, a};
+	int bt = con->current.border_thickness;
+	int px, py;
+	wlr_scene_node_coords(&parent->node, &px, &py);
+	wlr_scene_node_set_position(&tree->node, gx - bt - px, gy - bt - py);
+	// Containers are reparented (and thus restacked on top) on every
+	// arrange, so keep the ring above them.
+	wlr_scene_node_raise_to_top(&tree->node);
+	struct wlr_scene_rect *top =
+		con->animation_state.fullscreen_outline_rects[0];
+	struct wlr_scene_rect *bottom =
+		con->animation_state.fullscreen_outline_rects[1];
+	struct wlr_scene_rect *left =
+		con->animation_state.fullscreen_outline_rects[2];
+	struct wlr_scene_rect *right =
+		con->animation_state.fullscreen_outline_rects[3];
+	wlr_scene_node_set_position(&top->node, 0, 0);
+	wlr_scene_rect_set_size(top, w + 2 * bt, bt);
+	wlr_scene_node_set_position(&bottom->node, 0, h + bt);
+	wlr_scene_rect_set_size(bottom, w + 2 * bt, bt);
+	wlr_scene_node_set_position(&left->node, 0, bt);
+	wlr_scene_rect_set_size(left, bt, h);
+	wlr_scene_node_set_position(&right->node, w + bt, bt);
+	wlr_scene_rect_set_size(right, bt, h);
+	wlr_scene_rect_set_color(top, color);
+	wlr_scene_rect_set_color(bottom, color);
+	wlr_scene_rect_set_color(left, color);
+	wlr_scene_rect_set_color(right, color);
 }
 
 static void finish_fullscreen_animation(struct sway_container *con) {
 	fullscreen_animation_cancel(con);
 	if (con->view && con->view->saved_surface_tree) {
 		view_remove_saved_buffer(con->view);
+	}
+	fullscreen_landing_arrange();
+}
+
+// Lands containers whose exit zoom got stranded underneath a new
+// fullscreen (their workspace never arranges tiling again while the new
+// one is up). The next tiling arrange fixes exact positions.
+static void fullscreen_sweep_container(struct sway_container *con) {
+	if (con->view) {
+		wlr_scene_node_reparent(&con->view->scene_tree->node,
+			con->content_tree);
+		wlr_scene_node_set_position(&con->view->scene_tree->node, 0, 0);
+	}
+	fullscreen_stage_rest_tiling(con);
+	finish_fullscreen_animation(con);
+}
+
+static void fullscreen_sweep_workspace(struct sway_workspace *ws,
+		struct sway_container *except) {
+	if (!ws) {
+		return;
+	}
+	for (int i = 0; i < ws->tiling->length; ++i) {
+		struct sway_container *con = ws->tiling->items[i];
+		if (con != except && con->view &&
+				con->animation_state.fullscreen_anim_active &&
+				!con->animation_state.fullscreen_anim_entering) {
+			fullscreen_sweep_container(con);
+		}
+	}
+	for (int i = 0; i < ws->floating->length; ++i) {
+		struct sway_container *con = ws->floating->items[i];
+		if (con != except && con->view &&
+				con->animation_state.fullscreen_anim_active &&
+				!con->animation_state.fullscreen_anim_entering) {
+			fullscreen_sweep_container(con);
+		}
 	}
 }
 
@@ -1334,7 +1507,8 @@ static bool fullscreen_anim_running(struct sway_container *con) {
 		con->animation_state.fullscreen_animation->initialized;
 }
 
-void fullscreen_animation_begin(struct sway_container *con, bool entering) {
+void fullscreen_animation_begin(struct sway_container *con, bool entering,
+		bool global) {
 	if (!con || !con->view || !con->view->surface) {
 		return;
 	}
@@ -1346,15 +1520,30 @@ void fullscreen_animation_begin(struct sway_container *con, bool entering) {
 	if (!animation) {
 		return;
 	}
+	if (!entering) {
+		// The fullscreen may never have applied (toggled back before the
+		// transaction landed): then there is nothing to zoom out from.
+		struct sway_workspace *cws = con->current.workspace;
+		bool was_applied = con->current.fullscreen_mode != FULLSCREEN_NONE ||
+			(cws && cws->current.fullscreen == con) ||
+			root->fullscreen_global == con;
+		if (!was_applied) {
+			finish_fullscreen_animation(con);
+			return;
+		}
+	}
 	if (entering) {
 		// No sensible source rect for a freshly mapped window: skip.
 		if (con->current.width <= 0 || con->current.content_width <= 0) {
 			return;
 		}
-		int cx, cy;
-		wlr_scene_node_coords(&con->view->content_tree->node, &cx, &cy);
-		con->animation_state.fullscreen_anim_from_x = cx;
-		con->animation_state.fullscreen_anim_from_y = cy;
+		// From layout state, not scene coordinates: mid-exit the view
+		// tree is still parked in the fullscreen layer, where its
+		// coordinates are meaningless.
+		con->animation_state.fullscreen_anim_from_x =
+			(int)con->current.content_x;
+		con->animation_state.fullscreen_anim_from_y =
+			(int)con->current.content_y;
 	}
 	if (con->animation_state.fullscreen_anim_active &&
 			con->animation_state.fullscreen_anim_entering != entering &&
@@ -1365,6 +1554,8 @@ void fullscreen_animation_begin(struct sway_container *con, bool entering) {
 	}
 	con->animation_state.fullscreen_anim_active = true;
 	con->animation_state.fullscreen_anim_entering = entering;
+	con->animation_state.fullscreen_anim_global = global;
+	fullscreen_outline_teardown(con);
 	fullscreen_chrome_capture(con,
 		con->pending.workspace ? con->pending.workspace->output : NULL);
 	animation->duration_scale =
@@ -1411,19 +1602,20 @@ static bool arrange_fullscreen_enter_frame(struct sway_container *fs,
 	wlr_scene_node_coords(&tree->node, &lx, &ly);
 	int saved_w = view->saved_buffer_width;
 	int saved_h = view->saved_buffer_height;
-	view_update_saved_buffer_rect(view,
-		fullscreen_anim_lerp(
-			fs->animation_state.fullscreen_anim_from_x, lx, eased),
-		fullscreen_anim_lerp(
-			fs->animation_state.fullscreen_anim_from_y, ly, eased),
-		fullscreen_anim_lerp(saved_w, width, eased),
-		fullscreen_anim_lerp(saved_h, height, eased),
-		1.0f - eased);
+	int rx = fullscreen_anim_lerp(
+		fs->animation_state.fullscreen_anim_from_x, lx, eased);
+	int ry = fullscreen_anim_lerp(
+		fs->animation_state.fullscreen_anim_from_y, ly, eased);
+	int rw = fullscreen_anim_lerp(saved_w, width, eased);
+	int rh = fullscreen_anim_lerp(saved_h, height, eased);
+	view_update_saved_buffer_rect(view, rx, ry, rw, rh, 1.0f - eased);
+	fullscreen_outline_frame(fs, tree, rx, ry, rw, rh, 1.0f - eased);
 	return true;
 }
 
-// Renders one frame of the fullscreen -> tile zoom. Runs at the end of
-// arrange_container, once the container is back in its tiled position.
+// Renders one frame of the fullscreen -> tile zoom. The live tiling tree
+// stays hidden underneath while the snapshot shrinks in the fullscreen
+// layer, exactly mirroring the enter direction.
 static void arrange_fullscreen_exit_frame(struct sway_container *con) {
 	if (!con->animation_state.fullscreen_anim_active ||
 			con->animation_state.fullscreen_anim_entering) {
@@ -1432,6 +1624,15 @@ static void arrange_fullscreen_exit_frame(struct sway_container *con) {
 	struct sway_workspace *ws = con->current.workspace;
 	struct sway_output *output = ws ? ws->output : NULL;
 	struct sway_view *view = con->view;
+	sway_log(SWAY_DEBUG, "[FSOUTLINE] exit-frame con=%p active=%d entering=%d "
+		"cfg=%d view=%p saved=%p running=%d output=%p cw=%.0f ch=%.0f border=%d bt=%d",
+		(void*)con, con->animation_state.fullscreen_anim_active,
+		con->animation_state.fullscreen_anim_entering,
+		config->fullscreen_anim, (void*)view,
+		view ? (void*)view->saved_surface_tree : NULL,
+		fullscreen_anim_running(con), (void*)output,
+		con->current.content_width, con->current.content_height,
+		con->current.border, con->current.border_thickness);
 	if (!config->fullscreen_anim || !view || !view->saved_surface_tree ||
 			!fullscreen_anim_running(con) || !output ||
 			con->current.content_width <= 0 ||
@@ -1440,9 +1641,15 @@ static void arrange_fullscreen_exit_frame(struct sway_container *con) {
 		finish_fullscreen_animation(con);
 		return;
 	}
+	struct wlr_scene_tree *fslayer =
+		con->animation_state.fullscreen_anim_global ?
+		root->layers.fullscreen_global : ws->layers.fullscreen;
 	float eased = ease_in_out_cubic(
 		con->animation_state.fullscreen_animation->progress);
-	// Stage: reveal the wallpaper and bars, fading the backdrop out.
+	// Stage: this arrange turned the fullscreen layers off; switch ours
+	// back on, reveal the wallpaper and bars, fading the backdrop out.
+	wlr_scene_node_set_enabled(&fslayer->node, true);
+	wlr_scene_node_set_enabled(&output->layers.fullscreen->node, true);
 	wlr_scene_node_set_enabled(&output->layers.shell_background->node, true);
 	wlr_scene_node_set_enabled(&output->layers.shell_bottom->node, true);
 	if (output->fullscreen_background) {
@@ -1451,16 +1658,20 @@ static void arrange_fullscreen_exit_frame(struct sway_container *con) {
 		wlr_scene_rect_set_color(bg, color);
 	}
 	fullscreen_chrome_frame(con, 1.0f - eased);
-	int tcx, tcy;
-	wlr_scene_node_coords(&view->content_tree->node, &tcx, &tcy);
+	// Hide the live tiling tree; the snapshot carries the image.
+	wlr_scene_node_set_enabled(&con->scene_tree->node, false);
+	// Tile target comes from layout state: the view tree is still parked
+	// in the fullscreen layer, so its scene coordinates are meaningless.
+	int tcx = (int)con->current.content_x;
+	int tcy = (int)con->current.content_y;
 	int saved_w = view->saved_buffer_width;
 	int saved_h = view->saved_buffer_height;
-	view_update_saved_buffer_rect(view,
-		fullscreen_anim_lerp(output->lx, tcx, eased),
-		fullscreen_anim_lerp(output->ly, tcy, eased),
-		fullscreen_anim_lerp(saved_w, con->current.content_width, eased),
-		fullscreen_anim_lerp(saved_h, con->current.content_height, eased),
-		1.0f);
+	int rx = fullscreen_anim_lerp(output->lx, tcx, eased);
+	int ry = fullscreen_anim_lerp(output->ly, tcy, eased);
+	int rw = fullscreen_anim_lerp(saved_w, con->current.content_width, eased);
+	int rh = fullscreen_anim_lerp(saved_h, con->current.content_height, eased);
+	view_update_saved_buffer_rect(view, rx, ry, rw, rh, 1.0f);
+	fullscreen_outline_frame(con, fslayer, rx, ry, rw, rh, eased);
 }
 
 static void arrange_workspace_tiling(struct sway_workspace *ws,
@@ -1729,9 +1940,16 @@ static bool container_start_close_animation(struct sway_container *con) {
 	if (con->animation_state.fullscreen_anim_active) {
 		// Hand the snapshot over to the close animation instead of
 		// fighting over it (and never removing it from under it).
-		// The workspace returns to tiling, so restore that stage.
+		// The exit zoom may have left the view tree in the fullscreen
+		// layer; bring it home first (position fixed up by arrange).
+		if (con->view) {
+			wlr_scene_node_reparent(&con->view->scene_tree->node,
+				con->content_tree);
+			wlr_scene_node_set_position(&con->view->scene_tree->node, 0, 0);
+		}
 		fullscreen_stage_rest_tiling(con);
 		fullscreen_animation_cancel(con);
+		fullscreen_landing_arrange();
 	}
 
 	int lx, ly;

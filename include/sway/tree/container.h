@@ -200,8 +200,13 @@ struct sway_container {
 		// between its tiled rect and the fullscreen rect.
 		bool fullscreen_anim_active;
 		bool fullscreen_anim_entering;
+		bool fullscreen_anim_global;
 		int fullscreen_anim_from_x;
 		int fullscreen_anim_from_y;
+		// Animated border outline tracking the zoom (pixel borders only).
+		struct wlr_scene_tree *fullscreen_outline;
+		struct wlr_scene_rect *fullscreen_outline_rects[4];
+		struct wl_listener fullscreen_outline_destroy;
 	} animation_state;
 
 	struct {
@@ -429,6 +434,9 @@ int container_squash(struct sway_container *con);
 void container_arrange_title_bar(struct sway_container *con);
 
 void container_update(struct sway_container *con);
+
+// Copies the container's current border line color (straight alpha).
+void container_get_outline_color(struct sway_container *con, float color[4]);
 
 void container_update_itself_and_parents(struct sway_container *con);
 

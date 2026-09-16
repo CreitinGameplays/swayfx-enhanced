@@ -317,6 +317,12 @@ static void scene_shadow_set_color(struct wlr_scene_shadow *shadow,
 	wlr_scene_shadow_set_color(shadow, premultiplied);
 }
 
+void container_get_outline_color(struct sway_container *con,
+		float color[4]) {
+	struct border_colors *colors = container_get_current_colors(con);
+	memcpy(color, colors->child_border, sizeof(float) * 4);
+}
+
 void container_update(struct sway_container *con) {
 	struct border_colors *colors = container_get_current_colors(con);
 	list_t *siblings = NULL;
@@ -1729,6 +1735,9 @@ void container_set_fullscreen(struct sway_container *con,
 	if (con->pending.fullscreen_mode == mode) {
 		return;
 	}
+	bool fullscreen_global =
+		mode == FULLSCREEN_GLOBAL || (mode == FULLSCREEN_NONE &&
+			con->pending.fullscreen_mode == FULLSCREEN_GLOBAL);
 
 	switch (mode) {
 	case FULLSCREEN_NONE:
@@ -1768,7 +1777,8 @@ void container_set_fullscreen(struct sway_container *con,
 	}
 
 	// macOS-style zoom: animate between the tiled rect and fullscreen.
-	fullscreen_animation_begin(con, mode != FULLSCREEN_NONE);
+	fullscreen_animation_begin(con, mode != FULLSCREEN_NONE,
+		fullscreen_global);
 }
 
 struct sway_container *container_toplevel_ancestor(

@@ -53,6 +53,7 @@ macOS-style zoom when a window enters or leaves fullscreen: the window grows fro
 Notes:
 - Works for workspace and global fullscreen, on tiled and floating windows.
 - The snapshot animates the window content; decorations hide for the duration of the zoom.
+- Pixel borders get an outline ring that expands/shrinks with the window, fading out as it reaches fullscreen.
 - While the window zooms, top/bottom bars (e.g. waybar) slide out of the way, the wallpaper drifts sideways with a parallax motion, and the fullscreen backdrop fades in — all in sync, then everything is restored on exit.
 
 ### Dwindle Layout

@@ -72,9 +72,11 @@ void workspace_switch_animation_begin(struct sway_workspace *from,
 		struct sway_workspace *to);
 
 // macOS-style fullscreen zoom for the given container. entering selects the
-// tile -> fullscreen direction, otherwise fullscreen -> tile. No-op unless
-// fullscreen_anim is enabled.
-void fullscreen_animation_begin(struct sway_container *con, bool entering);
+// tile -> fullscreen direction, otherwise fullscreen -> tile. global marks a
+// global (vs workspace) fullscreen so the exit zoom uses the right layer.
+// No-op unless fullscreen_anim is enabled.
+void fullscreen_animation_begin(struct sway_container *con, bool entering,
+		bool global);
 
 // Drops a running fullscreen zoom and restores captured chrome, keeping any
 // view snapshot alive for the caller to deal with.
