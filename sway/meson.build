@@ -83,6 +83,8 @@ sway_sources = files(
 	'commands/force_display_urgency_hint.c',
 	'commands/force_focus_wrapping.c',
 	'commands/fullscreen.c',
+	'commands/fullscreen_anim.c',
+	'commands/fullscreen_anim_duration_ms.c',
 	'commands/gaps.c',
 	'commands/gesture.c',
 	'commands/hide_edge_borders.c',

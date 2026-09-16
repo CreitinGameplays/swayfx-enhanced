@@ -80,6 +80,7 @@ struct saved_buffer_data {
 	int y;
 	int width;
 	int height;
+	struct fx_corner_radii corners;
 };
 
 bool view_init(struct sway_view *view, enum sway_view_type type,
@@ -1538,6 +1539,7 @@ static void view_save_buffer_iterator(struct wlr_scene_buffer *buffer,
 	saved->y = sy;
 	saved->width = buffer->dst_width;
 	saved->height = buffer->dst_height;
+	saved->corners = buffer->corners;
 	sbuf->node.data = saved;
 }
 
@@ -1593,6 +1595,48 @@ void view_update_saved_buffer_scale(struct sway_view *view, float scale,
 		wlr_scene_buffer_set_dest_size(buffer,
 			MAX((int)(saved->width * scale), 1),
 			MAX((int)(saved->height * scale), 1));
+	}
+}
+
+// Places the saved snapshot so its content box lands on the given global
+// rect, scaling each buffer independently. Used by the macOS-style
+// fullscreen zoom, where the window grows/shrinks between its tiled rect
+// and the fullscreen rect. corner_scale (0..1) fades the snapshot's corner
+// radii towards square, e.g. while zooming into fullscreen.
+void view_update_saved_buffer_rect(struct sway_view *view,
+		int global_x, int global_y, int width, int height,
+		float corner_scale) {
+	if (!view->saved_surface_tree || view->saved_buffer_width <= 0 ||
+			view->saved_buffer_height <= 0 || width <= 0 || height <= 0) {
+		return;
+	}
+
+	int vx, vy;
+	wlr_scene_node_coords(&view->scene_tree->node, &vx, &vy);
+	wlr_scene_node_set_position(&view->saved_surface_tree->node,
+		global_x - vx, global_y - vy);
+
+	float scale_x = (float)width / view->saved_buffer_width;
+	float scale_y = (float)height / view->saved_buffer_height;
+
+	struct wlr_scene_node *node;
+	wl_list_for_each(node, &view->saved_surface_tree->children, link) {
+		if (node->type != WLR_SCENE_NODE_BUFFER || !node->data) {
+			continue;
+		}
+		struct saved_buffer_data *saved = node->data;
+		struct wlr_scene_buffer *buffer = wlr_scene_buffer_from_node(node);
+		wlr_scene_node_set_position(node,
+			(int)(saved->x * scale_x), (int)(saved->y * scale_y));
+		wlr_scene_buffer_set_dest_size(buffer,
+			MAX((int)(saved->width * scale_x), 1),
+			MAX((int)(saved->height * scale_y), 1));
+		wlr_scene_buffer_set_corner_radii(buffer, (struct fx_corner_radii){
+			.top_left = (uint16_t)(saved->corners.top_left * corner_scale),
+			.top_right = (uint16_t)(saved->corners.top_right * corner_scale),
+			.bottom_right = (uint16_t)(saved->corners.bottom_right * corner_scale),
+			.bottom_left = (uint16_t)(saved->corners.bottom_left * corner_scale),
+		});
 	}
 }
 

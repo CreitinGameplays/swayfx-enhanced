@@ -184,6 +184,7 @@ struct sway_container {
 	struct {
 		struct animation *animation;
 		struct animation *open_animation;
+		struct animation *fullscreen_animation;
 		struct wl_event_source *close_timer;
 		int delta_x;
 		int delta_y;
@@ -195,6 +196,12 @@ struct sway_container {
 		int current_content_height; // needed for output.c
 		bool close_running;
 		bool close_title_bar;
+		// macOS-style fullscreen zoom: animates a snapshot of the view
+		// between its tiled rect and the fullscreen rect.
+		bool fullscreen_anim_active;
+		bool fullscreen_anim_entering;
+		int fullscreen_anim_from_x;
+		int fullscreen_anim_from_y;
 	} animation_state;
 
 	struct {

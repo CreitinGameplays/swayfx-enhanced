@@ -18,6 +18,10 @@ void animation_manager_init(struct sway_server *server);
 
 struct animation init_animation();
 
+float ease_out_cubic(float t);
+
+float ease_in_out_cubic(float t);
+
 void refresh_animation_manager_timing();
 
 void add_animation(struct animation *animation);

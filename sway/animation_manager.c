@@ -29,6 +29,14 @@ float ease_out_cubic(float t) {
 	return pow(p, 3) + 1;
 }
 
+float ease_in_out_cubic(float t) {
+	if (t < 0.5f) {
+		return 4.0f * t * t * t;
+	}
+	float p = 2.0f * t - 2.0f;
+	return 1.0f + p * p * p / 2.0f;
+}
+
 int animation_timer() {
 	struct animation *animation, *tmp;
 	wl_list_for_each_reverse_safe(animation, tmp, &animation_manager.animations, link) {

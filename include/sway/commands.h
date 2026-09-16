@@ -160,6 +160,8 @@ sway_cmd cmd_for_window;
 sway_cmd cmd_force_display_urgency_hint;
 sway_cmd cmd_force_focus_wrapping;
 sway_cmd cmd_fullscreen;
+sway_cmd cmd_fullscreen_anim;
+sway_cmd cmd_fullscreen_anim_duration_ms;
 sway_cmd cmd_gaps;
 sway_cmd cmd_hide_edge_borders;
 sway_cmd cmd_include;

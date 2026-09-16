@@ -362,6 +362,10 @@ void view_save_buffer(struct sway_view *view);
 void view_update_saved_buffer_scale(struct sway_view *view, float scale,
 		int width, int height);
 
+void view_update_saved_buffer_rect(struct sway_view *view,
+		int global_x, int global_y, int width, int height,
+		float corner_scale);
+
 bool view_is_transient_for(struct sway_view *child, struct sway_view *ancestor);
 
 void view_assign_ctx(struct sway_view *view, struct launcher_ctx *ctx);

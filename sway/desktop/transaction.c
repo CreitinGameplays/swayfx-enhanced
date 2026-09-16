@@ -9,6 +9,7 @@
 #include "sway/scene_descriptor.h"
 #include "sway/desktop/idle_inhibit_v1.h"
 #include "sway/desktop/transaction.h"
+#include "sway/layers.h"
 #include "sway/input/cursor.h"
 #include "sway/input/input-manager.h"
 #include "sway/output.h"
@@ -46,6 +47,10 @@ static const float close_animation_duration_scale = 0.8f;
 
 static void animation_update_callback(void);
 static bool container_start_close_animation(struct sway_container *con);
+static bool arrange_fullscreen_enter_frame(struct sway_container *fs,
+		struct sway_workspace *ws, struct wlr_scene_tree *tree,
+		int width, int height);
+static void arrange_fullscreen_exit_frame(struct sway_container *con);
 
 static int get_container_scroll_x_adjustment(struct sway_container *con) {
 	if (!con || container_is_floating_or_child(con)) {
@@ -319,7 +324,10 @@ static void apply_container_state(struct sway_container *container,
 
 	if (view) {
 		if (view->saved_surface_tree) {
-			if (!container->node.destroying) {
+			// Kept alive while the fullscreen zoom runs: it animates the
+			// snapshot instead of cutting straight to the new size.
+			if (!container->node.destroying &&
+					!container->animation_state.fullscreen_anim_active) {
 				view_remove_saved_buffer(view);
 			}
 		}
@@ -786,6 +794,10 @@ static void arrange_container(struct sway_container *con,
 			con->current.focused_inactive_child, con->content_tree,
 			width, height, gaps);
 	}
+
+	// macOS-style fullscreen zoom-out: the container is back in place, shrink
+	// the fullscreen snapshot onto it.
+	arrange_fullscreen_exit_frame(con);
 }
 
 static int container_get_gaps(struct sway_container *con) {
@@ -825,7 +837,9 @@ static void arrange_fullscreen(struct wlr_scene_tree *tree,
 
 	wlr_scene_node_reparent(fs_node, tree);
 	wlr_scene_node_lower_to_bottom(fs_node);
-	wlr_scene_node_set_position(fs_node, 0, 0);
+	if (!fs->view || !arrange_fullscreen_enter_frame(fs, ws, tree, width, height)) {
+		wlr_scene_node_set_position(fs_node, 0, 0);
+	}
 }
 
 static int get_switch_animation_offset(struct sway_workspace *ws);
@@ -1058,6 +1072,395 @@ void workspace_switch_animation_begin(struct sway_workspace *from,
 		add_animation(animation);
 	}
 	start_animations(&animation_update_callback);
+}
+
+// macOS-style fullscreen zoom: grows (or shrinks) a snapshot of the view
+// between its tiled rect and the fullscreen rect with an ease-in-out curve.
+
+static int fullscreen_anim_lerp(int from, int to, float t) {
+	return from + (int)((to - from) * t);
+}
+
+// ---- Fullscreen chrome: waybar slide + wallpaper parallax -----------------
+// While the window zooms, top/bottom bars slide out of the way and the
+// wallpaper drifts sideways, all driven by the same eased progress.
+
+enum fullscreen_chrome_kind {
+	FS_CHROME_BAR_UP,    // top-anchored bar slides up and out
+	FS_CHROME_BAR_DOWN,  // bottom-anchored bar slides down and out
+	FS_CHROME_WALLPAPER, // background drifts left (parallax)
+};
+
+struct fullscreen_chrome_slot {
+	struct wlr_scene_node *node; // NULL once destroyed
+	struct wl_listener destroy;
+	int base_x, base_y;
+	enum fullscreen_chrome_kind kind;
+	int magnitude; // px of travel at full progress
+};
+
+struct fullscreen_chrome_capture {
+	struct sway_container *con;
+	struct sway_output *output;
+	struct fullscreen_chrome_slot *slots;
+	int len;
+};
+
+#define FULLSCREEN_CHROME_MAX_SLOTS 32
+
+static list_t *fs_chrome_captures;
+
+static struct fullscreen_chrome_capture *fullscreen_chrome_find(
+		struct sway_container *con) {
+	if (!fs_chrome_captures) {
+		return NULL;
+	}
+	for (int i = 0; i < fs_chrome_captures->length; ++i) {
+		struct fullscreen_chrome_capture *cap = fs_chrome_captures->items[i];
+		if (cap->con == con) {
+			return cap;
+		}
+	}
+	return NULL;
+}
+
+static void fullscreen_chrome_slot_destroy(struct wl_listener *listener,
+		void *data) {
+	struct fullscreen_chrome_slot *slot =
+		wl_container_of(listener, slot, destroy);
+	wl_list_remove(&slot->destroy.link);
+	slot->node = NULL;
+}
+
+// Restores captured nodes to their base positions and drops the capture.
+static void fullscreen_chrome_teardown(struct sway_container *con) {
+	struct fullscreen_chrome_capture *cap = fullscreen_chrome_find(con);
+	if (!cap) {
+		return;
+	}
+	for (int i = 0; i < cap->len; ++i) {
+		struct fullscreen_chrome_slot *slot = &cap->slots[i];
+		if (!slot->node) {
+			continue;
+		}
+		wl_list_remove(&slot->destroy.link);
+		wlr_scene_node_set_position(slot->node, slot->base_x, slot->base_y);
+		slot->node = NULL;
+	}
+	free(cap->slots);
+	int idx = list_find(fs_chrome_captures, cap);
+	free(cap);
+	if (idx != -1) {
+		list_del(fs_chrome_captures, idx);
+	}
+}
+
+static void fullscreen_chrome_capture_tree(
+		struct fullscreen_chrome_capture *cap, struct wlr_scene_tree *tree,
+		bool is_background, struct sway_output *output) {
+	struct wlr_scene_node *node;
+	wl_list_for_each(node, &tree->children, link) {
+		if (cap->len >= FULLSCREEN_CHROME_MAX_SLOTS) {
+			return;
+		}
+		struct sway_layer_surface *surface = scene_descriptor_try_get(node,
+			SWAY_SCENE_DESC_LAYER_SHELL);
+		if (!surface || !surface->scene || !surface->layer_surface) {
+			continue;
+		}
+		struct wlr_layer_surface_v1 *ls = surface->layer_surface;
+		if (!ls->surface || !ls->surface->mapped) {
+			continue;
+		}
+		struct fullscreen_chrome_slot *slot = &cap->slots[cap->len];
+		if (is_background) {
+			if (output->width <= 0) {
+				continue;
+			}
+			slot->kind = FS_CHROME_WALLPAPER;
+			slot->magnitude = output->width / 8;
+			if (slot->magnitude <= 0) {
+				continue;
+			}
+		} else {
+			int height = ls->surface->current.height;
+			if (height <= 0) {
+				continue;
+			}
+			uint32_t anchor = ls->current.anchor;
+			bool top = (anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP) &&
+				!(anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM);
+			slot->kind = top ? FS_CHROME_BAR_UP : FS_CHROME_BAR_DOWN;
+			slot->magnitude = height;
+		}
+		wlr_scene_node_coords(&surface->scene->tree->node,
+			&slot->base_x, &slot->base_y);
+		slot->node = &surface->scene->tree->node;
+		slot->destroy.notify = fullscreen_chrome_slot_destroy;
+		wl_signal_add(&slot->node->events.destroy, &slot->destroy);
+		cap->len++;
+	}
+}
+
+static void fullscreen_chrome_capture(struct sway_container *con,
+		struct sway_output *output) {
+	fullscreen_chrome_teardown(con);
+	if (!output) {
+		return;
+	}
+	if (!fs_chrome_captures) {
+		fs_chrome_captures = create_list();
+		if (!fs_chrome_captures) {
+			return;
+		}
+	}
+	struct fullscreen_chrome_capture *cap = calloc(1, sizeof(*cap));
+	if (!cap) {
+		return;
+	}
+	cap->slots = calloc(FULLSCREEN_CHROME_MAX_SLOTS, sizeof(*cap->slots));
+	if (!cap->slots) {
+		free(cap);
+		return;
+	}
+	cap->con = con;
+	cap->output = output;
+	fullscreen_chrome_capture_tree(cap, output->layers.shell_background,
+		true, output);
+	fullscreen_chrome_capture_tree(cap, output->layers.shell_top,
+		false, output);
+	fullscreen_chrome_capture_tree(cap, output->layers.shell_bottom,
+		false, output);
+	if (cap->len == 0) {
+		free(cap->slots);
+		free(cap);
+		return;
+	}
+	list_add(fs_chrome_captures, cap);
+}
+
+// Positions captured chrome at the given progress (0 = rest, 1 = fully out).
+// An entering animation on the same output owns the chrome, so a concurrent
+// exit stays out of its way.
+static void fullscreen_chrome_frame(struct sway_container *con,
+		float chrome_e) {
+	struct fullscreen_chrome_capture *cap = fullscreen_chrome_find(con);
+	if (!cap || !cap->output) {
+		return;
+	}
+	if (!con->animation_state.fullscreen_anim_entering && fs_chrome_captures) {
+		for (int i = 0; i < fs_chrome_captures->length; ++i) {
+			struct fullscreen_chrome_capture *other =
+				fs_chrome_captures->items[i];
+			if (other != cap && other->output == cap->output &&
+					other->con->animation_state.fullscreen_anim_active &&
+					other->con->animation_state.fullscreen_anim_entering) {
+				return;
+			}
+		}
+	}
+	for (int i = 0; i < cap->len; ++i) {
+		struct fullscreen_chrome_slot *slot = &cap->slots[i];
+		if (!slot->node) {
+			continue;
+		}
+		int off = (int)(slot->magnitude * chrome_e);
+		switch (slot->kind) {
+		case FS_CHROME_BAR_UP:
+			wlr_scene_node_set_position(slot->node,
+				slot->base_x, slot->base_y - off);
+			break;
+		case FS_CHROME_BAR_DOWN:
+			wlr_scene_node_set_position(slot->node,
+				slot->base_x, slot->base_y + off);
+			break;
+		case FS_CHROME_WALLPAPER:
+			wlr_scene_node_set_position(slot->node,
+				slot->base_x - off, slot->base_y);
+			break;
+		}
+	}
+}
+
+// Rest states for the per-output fullscreen stage.
+static void fullscreen_stage_rest_tiling(struct sway_container *con) {
+	struct sway_workspace *ws = con->current.workspace;
+	struct sway_output *output = ws ? ws->output : NULL;
+	if (!output) {
+		return;
+	}
+	wlr_scene_node_set_enabled(&output->layers.shell_background->node, true);
+	wlr_scene_node_set_enabled(&output->layers.shell_bottom->node, true);
+	if (output->fullscreen_background) {
+		struct wlr_scene_rect *bg = output->fullscreen_background;
+		float color[4] = {bg->color[0], bg->color[1], bg->color[2], 1.0f};
+		wlr_scene_rect_set_color(bg, color);
+	}
+}
+
+static void fullscreen_stage_rest_fullscreen(struct sway_output *output) {
+	if (!output) {
+		return;
+	}
+	wlr_scene_node_set_enabled(&output->layers.shell_background->node, false);
+	wlr_scene_node_set_enabled(&output->layers.shell_bottom->node, false);
+	if (output->fullscreen_background) {
+		struct wlr_scene_rect *bg = output->fullscreen_background;
+		float color[4] = {bg->color[0], bg->color[1], bg->color[2], 1.0f};
+		wlr_scene_rect_set_color(bg, color);
+	}
+}
+
+void fullscreen_animation_cancel(struct sway_container *con) {
+	struct animation *animation = con->animation_state.fullscreen_animation;
+	if (animation && animation->initialized) {
+		animation->initialized = false;
+		wl_list_remove(&animation->link);
+	}
+	con->animation_state.fullscreen_anim_active = false;
+	fullscreen_chrome_teardown(con);
+}
+
+static void finish_fullscreen_animation(struct sway_container *con) {
+	fullscreen_animation_cancel(con);
+	if (con->view && con->view->saved_surface_tree) {
+		view_remove_saved_buffer(con->view);
+	}
+}
+
+static bool fullscreen_anim_running(struct sway_container *con) {
+	return con->animation_state.fullscreen_anim_active &&
+		con->animation_state.fullscreen_animation &&
+		con->animation_state.fullscreen_animation->initialized;
+}
+
+void fullscreen_animation_begin(struct sway_container *con, bool entering) {
+	if (!con || !con->view || !con->view->surface) {
+		return;
+	}
+	if (!config->fullscreen_anim || !config->animation_duration_ms ||
+			!config->fullscreen_anim_duration_ms) {
+		return;
+	}
+	struct animation *animation = con->animation_state.fullscreen_animation;
+	if (!animation) {
+		return;
+	}
+	if (entering) {
+		// No sensible source rect for a freshly mapped window: skip.
+		if (con->current.width <= 0 || con->current.content_width <= 0) {
+			return;
+		}
+		int cx, cy;
+		wlr_scene_node_coords(&con->view->content_tree->node, &cx, &cy);
+		con->animation_state.fullscreen_anim_from_x = cx;
+		con->animation_state.fullscreen_anim_from_y = cy;
+	}
+	if (con->animation_state.fullscreen_anim_active &&
+			con->animation_state.fullscreen_anim_entering != entering &&
+			con->view->saved_surface_tree) {
+		// Reversing mid-flight: drop the stale snapshot so the upcoming
+		// transaction captures a fresh one for the new direction.
+		view_remove_saved_buffer(con->view);
+	}
+	con->animation_state.fullscreen_anim_active = true;
+	con->animation_state.fullscreen_anim_entering = entering;
+	fullscreen_chrome_capture(con,
+		con->pending.workspace ? con->pending.workspace->output : NULL);
+	animation->duration_scale =
+		config->fullscreen_anim_duration_ms / config->animation_duration_ms;
+	add_animation(animation);
+	start_animations(&animation_update_callback);
+}
+
+// Renders one frame of the tile -> fullscreen zoom. Returns false when the
+// animation is over (or cannot run), in which case the caller falls through
+// to the regular fullscreen layout.
+static bool arrange_fullscreen_enter_frame(struct sway_container *fs,
+		struct sway_workspace *ws, struct wlr_scene_tree *tree,
+		int width, int height) {
+	if (!fs->animation_state.fullscreen_anim_active ||
+			!fs->animation_state.fullscreen_anim_entering) {
+		return false;
+	}
+	struct sway_output *output = ws ? ws->output : NULL;
+	if (!output && fs->current.workspace) {
+		output = fs->current.workspace->output;
+	}
+	struct sway_view *view = fs->view;
+	if (!config->fullscreen_anim || !view || !view->saved_surface_tree ||
+			!fullscreen_anim_running(fs) || !output) {
+		fullscreen_stage_rest_fullscreen(output);
+		finish_fullscreen_animation(fs);
+		return false;
+	}
+	float eased = ease_in_out_cubic(
+		fs->animation_state.fullscreen_animation->progress);
+	// Stage: keep the wallpaper and bars visible and fade the fullscreen
+	// backdrop in underneath the zooming window.
+	wlr_scene_node_set_enabled(&output->layers.shell_background->node, true);
+	wlr_scene_node_set_enabled(&output->layers.shell_bottom->node, true);
+	if (output->fullscreen_background) {
+		struct wlr_scene_rect *bg = output->fullscreen_background;
+		float color[4] = {bg->color[0], bg->color[1], bg->color[2], eased};
+		wlr_scene_rect_set_color(bg, color);
+	}
+	fullscreen_chrome_frame(fs, eased);
+	wlr_scene_node_set_position(&view->scene_tree->node, 0, 0);
+	int lx, ly;
+	wlr_scene_node_coords(&tree->node, &lx, &ly);
+	int saved_w = view->saved_buffer_width;
+	int saved_h = view->saved_buffer_height;
+	view_update_saved_buffer_rect(view,
+		fullscreen_anim_lerp(
+			fs->animation_state.fullscreen_anim_from_x, lx, eased),
+		fullscreen_anim_lerp(
+			fs->animation_state.fullscreen_anim_from_y, ly, eased),
+		fullscreen_anim_lerp(saved_w, width, eased),
+		fullscreen_anim_lerp(saved_h, height, eased),
+		1.0f - eased);
+	return true;
+}
+
+// Renders one frame of the fullscreen -> tile zoom. Runs at the end of
+// arrange_container, once the container is back in its tiled position.
+static void arrange_fullscreen_exit_frame(struct sway_container *con) {
+	if (!con->animation_state.fullscreen_anim_active ||
+			con->animation_state.fullscreen_anim_entering) {
+		return;
+	}
+	struct sway_workspace *ws = con->current.workspace;
+	struct sway_output *output = ws ? ws->output : NULL;
+	struct sway_view *view = con->view;
+	if (!config->fullscreen_anim || !view || !view->saved_surface_tree ||
+			!fullscreen_anim_running(con) || !output ||
+			con->current.content_width <= 0 ||
+			con->current.content_height <= 0) {
+		fullscreen_stage_rest_tiling(con);
+		finish_fullscreen_animation(con);
+		return;
+	}
+	float eased = ease_in_out_cubic(
+		con->animation_state.fullscreen_animation->progress);
+	// Stage: reveal the wallpaper and bars, fading the backdrop out.
+	wlr_scene_node_set_enabled(&output->layers.shell_background->node, true);
+	wlr_scene_node_set_enabled(&output->layers.shell_bottom->node, true);
+	if (output->fullscreen_background) {
+		struct wlr_scene_rect *bg = output->fullscreen_background;
+		float color[4] = {bg->color[0], bg->color[1], bg->color[2], 1.0f - eased};
+		wlr_scene_rect_set_color(bg, color);
+	}
+	fullscreen_chrome_frame(con, 1.0f - eased);
+	int tcx, tcy;
+	wlr_scene_node_coords(&view->content_tree->node, &tcx, &tcy);
+	int saved_w = view->saved_buffer_width;
+	int saved_h = view->saved_buffer_height;
+	view_update_saved_buffer_rect(view,
+		fullscreen_anim_lerp(output->lx, tcx, eased),
+		fullscreen_anim_lerp(output->ly, tcy, eased),
+		fullscreen_anim_lerp(saved_w, con->current.content_width, eased),
+		fullscreen_anim_lerp(saved_h, con->current.content_height, eased),
+		1.0f);
 }
 
 static void arrange_workspace_tiling(struct sway_workspace *ws,
@@ -1321,6 +1724,14 @@ static bool container_start_close_animation(struct sway_container *con) {
 	if (!config->animation_duration_ms || !con->view ||
 			!con->view->saved_surface_tree || con->animation_state.close_running) {
 		return false;
+	}
+
+	if (con->animation_state.fullscreen_anim_active) {
+		// Hand the snapshot over to the close animation instead of
+		// fighting over it (and never removing it from under it).
+		// The workspace returns to tiling, so restore that stage.
+		fullscreen_stage_rest_tiling(con);
+		fullscreen_animation_cancel(con);
 	}
 
 	int lx, ly;

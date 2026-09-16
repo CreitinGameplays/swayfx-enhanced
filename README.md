@@ -45,6 +45,16 @@ Notes:
 - Both tiling and floating windows participate in the slide.
 - The animation is skipped when either workspace is fullscreen, when switching across outputs, or when `workspace_switch_anim` is disabled.
 
+#### Fullscreen zoom animation
+macOS-style zoom when a window enters or leaves fullscreen: the window grows from its tiled rect to fill the screen (and shrinks back on exit) with an ease-in-out curve, while its corners round out to square.
+- `fullscreen_anim <enable|disable>`: Master toggle. Enabled by default.
+- `fullscreen_anim_duration_ms <value>`: Zoom duration in milliseconds (0-5000, default: 400). Scaled relative to `animation_duration_ms`.
+
+Notes:
+- Works for workspace and global fullscreen, on tiled and floating windows.
+- The snapshot animates the window content; decorations hide for the duration of the zoom.
+- While the window zooms, top/bottom bars (e.g. waybar) slide out of the way, the wallpaper drifts sideways with a parallax motion, and the fullscreen backdrop fades in — all in sync, then everything is restored on exit.
+
 ### Dwindle Layout
 Optional Hyprland-like auto-split for new tiled windows.
 - `dwindle <enable|disable>`: Disabled by default.

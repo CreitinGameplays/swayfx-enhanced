@@ -186,6 +186,12 @@ struct sway_container *container_create(struct sway_view *view) {
 	*c->animation_state.open_animation = init_animation();
 	c->animation_state.open_animation->progress = 1.0f;
 	c->animation_state.open_animation->multiplier = 1.0f;
+	c->animation_state.fullscreen_animation = malloc(sizeof(struct animation));
+	*c->animation_state.fullscreen_animation = init_animation();
+	c->animation_state.fullscreen_anim_active = false;
+	c->animation_state.fullscreen_anim_entering = true;
+	c->animation_state.fullscreen_anim_from_x = 0;
+	c->animation_state.fullscreen_anim_from_y = 0;
 	c->animation_state.close_timer = NULL;
 	c->animation_state.delta_x = 0;
 	c->animation_state.delta_y = 0;
@@ -609,6 +615,8 @@ void container_destroy(struct sway_container *con) {
 
 	transaction_close_animation_cancel(con);
 
+	fullscreen_animation_cancel(con);
+
 	if (con->animation_state.animation) {
 		if (con->animation_state.animation->initialized) {
 			con->animation_state.animation->initialized = false;
@@ -625,6 +633,15 @@ void container_destroy(struct sway_container *con) {
 		free(con->animation_state.open_animation);
 		con->animation_state.open_animation = NULL;
 	}
+	if (con->animation_state.fullscreen_animation) {
+		if (con->animation_state.fullscreen_animation->initialized) {
+			con->animation_state.fullscreen_animation->initialized = false;
+			wl_list_remove(&con->animation_state.fullscreen_animation->link);
+		}
+		free(con->animation_state.fullscreen_animation);
+		con->animation_state.fullscreen_animation = NULL;
+	}
+	con->animation_state.fullscreen_anim_active = false;
 	con->animation_state.close_running = false;
 
 	scene_node_disown_children(con->content_tree);
@@ -1749,6 +1766,9 @@ void container_set_fullscreen(struct sway_container *con,
 		container_fullscreen_global(con);
 		break;
 	}
+
+	// macOS-style zoom: animate between the tiled rect and fullscreen.
+	fullscreen_animation_begin(con, mode != FULLSCREEN_NONE);
 }
 
 struct sway_container *container_toplevel_ancestor(

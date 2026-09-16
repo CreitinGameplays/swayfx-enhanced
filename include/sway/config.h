@@ -488,6 +488,8 @@ struct sway_config {
 	float animation_duration_ms;
 	bool workspace_switch_anim;
 	float workspace_anim_duration_ms;
+	bool fullscreen_anim;
+	float fullscreen_anim_duration_ms;
 	// Workspace slide easing curve control points.
 	double workspace_switch_curve_c1x;
 	double workspace_switch_curve_c1y;
