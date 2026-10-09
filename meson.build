@@ -54,7 +54,7 @@ subproject(
 	'scenefx',
 	required: false,
 )
-scenefx = dependency('scenefx-0.4', fallback: 'scenefx')
+scenefx = dependency('scenefx-0.5', fallback: 'scenefx')
 wlroots_features = {
 	'xwayland': false,
 	'libinput_backend': false,
