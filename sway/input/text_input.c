@@ -635,7 +635,7 @@ void sway_input_method_relay_init(struct sway_seat *seat,
 	wl_list_init(&relay->input_popups);
 
 	relay->text_input_new.notify = relay_handle_text_input;
-	wl_signal_add(&server.text_input->events.text_input,
+	wl_signal_add(&server.text_input->events.new_text_input,
 		&relay->text_input_new);
 	relay->text_input_manager_destroy.notify = relay_handle_text_input_manager_destroy;
 	wl_signal_add(&server.text_input->events.destroy,
@@ -643,7 +643,7 @@ void sway_input_method_relay_init(struct sway_seat *seat,
 
 	relay->input_method_new.notify = relay_handle_input_method;
 	wl_signal_add(
-		&server.input_method->events.input_method,
+		&server.input_method->events.new_input_method,
 		&relay->input_method_new);
 	relay->input_method_manager_destroy.notify = relay_handle_input_method_manager_destroy;
 	wl_signal_add(&server.input_method->events.destroy,
