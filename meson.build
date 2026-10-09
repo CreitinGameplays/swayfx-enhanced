@@ -40,14 +40,14 @@ if is_freebsd
 endif
 
 # Execute the wlroots subproject FIRST so it overrides the system package
-wlroots_version = ['>=0.19.0', '<0.20.0']
+wlroots_version = ['>=0.20.0', '<0.21.0']
 subproject(
 	'wlroots',
 	default_options: ['examples=false', 'xwayland=enabled'],
 	required: false,
 	version: wlroots_version,
 )
-wlroots = dependency('wlroots-0.19', version: wlroots_version, fallback: 'wlroots')
+wlroots = dependency('wlroots-0.20', version: wlroots_version, fallback: 'wlroots')
 
 # NOW execute the scenefx subproject, which will safely use the bundled wlroots
 subproject(
@@ -122,7 +122,7 @@ conf_data.set10('HAVE_LIBSYSTEMD', sdbus.found() and sdbus.name() == 'libsystemd
 conf_data.set10('HAVE_LIBELOGIND', sdbus.found() and sdbus.name() == 'libelogind')
 conf_data.set10('HAVE_BASU', sdbus.found() and sdbus.name() == 'basu')
 conf_data.set10('HAVE_TRAY', have_tray)
-foreach sym : ['LIBINPUT_CONFIG_ACCEL_PROFILE_CUSTOM', 'LIBINPUT_CONFIG_DRAG_LOCK_ENABLED_STICKY']
+foreach sym : ['LIBINPUT_CONFIG_ACCEL_PROFILE_CUSTOM', 'LIBINPUT_CONFIG_DRAG_LOCK_ENABLED_STICKY', 'LIBINPUT_CONFIG_SCROLL_CIRCULAR']
 	conf_data.set10('HAVE_' + sym, cc.has_header_symbol('libinput.h', sym, dependencies: libinput))
 endforeach
 
