@@ -7,11 +7,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1731533236,
-        "narHash": "sha256-l0KFg5HjrsfsO/JpG+r7fRrqm12kzFHyUHqHCVpMMbI=",
+        "lastModified": 1791914995,
+        "narHash": "sha256-Zf/xfQEAasnwnmEfHqW/4hjDE/s44yn2hD4RuVIZRjA=",
         "owner": "numtide",
         "repo": "flake-utils",
-        "rev": "11707dc2f618dd54ca8739b309ec4fc024de578b",
+        "rev": "b7a79d3fea1e214f6d668d521cecec0c01e26544",
         "type": "github"
       },
       "original": {
@@ -22,11 +22,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1769237874,
-        "narHash": "sha256-saOixpqPT4fiE/M8EfHv9I98f3sSEvt6nhMJ/z0a7xI=",
+        "lastModified": 1792782095,
+        "narHash": "sha256-KtL+p7f7jY34cO5Mt0/hUZNE3spnINk7hwpYxM2XLC4=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "523257564973361cc3e55e3df3e77e68c20b0b80",
+        "rev": "901c54c08bdc20e00c2b3c73716b97497b1b3c74",
         "type": "github"
       },
       "original": {
@@ -55,11 +55,11 @@
         "systems": "systems"
       },
       "locked": {
-        "lastModified": 1768403764,
-        "narHash": "sha256-1RVLChp1WUcjnDu30jG2DTXW0A6K3lkezEip3KTf/gE=",
+        "lastModified": 1792006792,
+        "narHash": "sha256-dmBb+d2YEFWAb0j28YHfBdioY1q2nB4WoaaLu3FhXjE=",
         "owner": "wlrfx",
         "repo": "scenefx",
-        "rev": "05a5e7a9177de04bc398e25821c0898c2a284c9f",
+        "rev": "b96cb6c923b8bf721ad11fa2136fe070d9adc2dd",
         "type": "github"
       },
       "original": {
